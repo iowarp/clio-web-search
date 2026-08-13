@@ -1,0 +1,21 @@
+services:
+  clio-search:
+    image: ghcr.io/iowarp/clio-search:0.1.0
+    container_name: clio-search
+    restart: unless-stopped
+    init: true
+    user: "0:0"
+    ports:
+      - "127.0.0.1:8088:8080"
+    environment:
+      CLIO_SEARCH_CONTACT_EMAIL: "${CLIO_SEARCH_CONTACT_EMAIL:-}"
+      CLIO_SEARCH_OPENALEX_API_KEY: "${CLIO_SEARCH_OPENALEX_API_KEY:-}"
+    volumes:
+      - clio-search-data:/var/lib/clio-search
+    security_opt:
+      - no-new-privileges:true
+    ulimits:
+      core: 0
+
+volumes:
+  clio-search-data:
