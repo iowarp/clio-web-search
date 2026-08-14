@@ -1,6 +1,6 @@
 """GROBID TEI normalization tests."""
 
-from clio_search.grobid import _parse_tei
+from clio_web_search.grobid import _parse_tei
 
 
 def test_parse_tei_preserves_references_and_contexts() -> None:

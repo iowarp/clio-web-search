@@ -41,7 +41,7 @@ jobs:
       - id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
-          images: ghcr.io/iowarp/clio-search
+          images: ghcr.io/iowarp/clio-web-search
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}

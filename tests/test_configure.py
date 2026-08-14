@@ -5,8 +5,18 @@ from pathlib import Path
 from runpy import run_path
 from typing import cast
 
-from clio_search.config import Settings
-from clio_search.configure import build_searxng_settings, write_searxng_settings
+import pytest
+
+from clio_web_search.config import Settings
+from clio_web_search.configure import build_searxng_settings, write_searxng_settings
+
+
+def test_settings_use_web_search_environment_prefix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CLIO_WEB_SEARCH_WORKERS", "3")
+
+    assert Settings().workers == 3
 
 
 def test_openalex_patch_suppresses_unverified_abstract(tmp_path: Path) -> None:

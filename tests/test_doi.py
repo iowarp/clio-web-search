@@ -2,7 +2,7 @@
 
 import pytest
 
-from clio_search.doi import is_doi, normalize_doi
+from clio_web_search.doi import is_doi, normalize_doi
 
 
 @pytest.mark.parametrize(

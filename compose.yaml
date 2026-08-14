@@ -1,21 +1,36 @@
 services:
-  clio-search:
-    image: ghcr.io/iowarp/clio-search:0.1.0
-    container_name: clio-search
+  clio-web-search:
+    # Override CLIO_WEB_SEARCH_IMAGE to pin an immutable digest or test another release.
+    image: "${CLIO_WEB_SEARCH_IMAGE:-ghcr.io/iowarp/clio-web-search:0.2.0}"
+    container_name: clio-web-search
     restart: unless-stopped
     init: true
+    # The entrypoint repairs the data-volume ownership, then drops to UID/GID 65534.
     user: "0:0"
     ports:
-      - "127.0.0.1:8088:8080"
+      # Keep the default loopback binding unless trusted LAN clients need access.
+      - "${CLIO_WEB_SEARCH_BIND_ADDRESS:-127.0.0.1}:${CLIO_WEB_SEARCH_PORT:-8088}:8080"
     environment:
-      CLIO_SEARCH_CONTACT_EMAIL: "${CLIO_SEARCH_CONTACT_EMAIL:-}"
-      CLIO_SEARCH_OPENALEX_API_KEY: "${CLIO_SEARCH_OPENALEX_API_KEY:-}"
+      # Optional identification for Crossref and required to enable Unpaywall.
+      CLIO_WEB_SEARCH_CONTACT_EMAIL: "${CLIO_WEB_SEARCH_CONTACT_EMAIL:-}"
+      # Optional free OpenAlex key for higher and more predictable API allowance.
+      CLIO_WEB_SEARCH_OPENALEX_API_KEY: "${CLIO_WEB_SEARCH_OPENALEX_API_KEY:-}"
+      # Document, queue, cache, and upstream request limits.
+      CLIO_WEB_SEARCH_MAX_INPUT_BYTES: "${CLIO_WEB_SEARCH_MAX_INPUT_BYTES:-52428800}"
+      CLIO_WEB_SEARCH_WORKERS: "${CLIO_WEB_SEARCH_WORKERS:-1}"
+      CLIO_WEB_SEARCH_MAX_PENDING_JOBS: "${CLIO_WEB_SEARCH_MAX_PENDING_JOBS:-32}"
+      CLIO_WEB_SEARCH_CACHE_TTL_DAYS: "${CLIO_WEB_SEARCH_CACHE_TTL_DAYS:-7}"
+      CLIO_WEB_SEARCH_CACHE_MAX_BYTES: "${CLIO_WEB_SEARCH_CACHE_MAX_BYTES:-10737418240}"
+      CLIO_WEB_SEARCH_CONVERSION_TIMEOUT_S: "${CLIO_WEB_SEARCH_CONVERSION_TIMEOUT_S:-900}"
+      CLIO_WEB_SEARCH_REQUEST_TIMEOUT_S: "${CLIO_WEB_SEARCH_REQUEST_TIMEOUT_S:-30}"
     volumes:
-      - clio-search-data:/var/lib/clio-search
+      - clio-web-search-data:/var/lib/clio-web-search
     security_opt:
       - no-new-privileges:true
     ulimits:
       core: 0
 
 volumes:
-  clio-search-data:
+  clio-web-search-data:
+    # Set CLIO_WEB_SEARCH_DATA_VOLUME to use an existing named volume.
+    name: "${CLIO_WEB_SEARCH_DATA_VOLUME:-clio-web-search-data}"

@@ -9,9 +9,9 @@ from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 
-from clio_search.config import Settings
-from clio_search.documents import _public_failure
-from clio_search.main import create_app
+from clio_web_search.config import Settings
+from clio_web_search.documents import _public_failure
+from clio_web_search.main import create_app
 
 
 def _settings(tmp_path: Path, **overrides: Any) -> Settings:

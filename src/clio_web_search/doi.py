@@ -8,7 +8,8 @@ from urllib.parse import quote
 
 import httpx
 
-from clio_search.config import Settings
+from clio_web_search import __version__
+from clio_web_search.config import Settings
 
 _DOI_RE = re.compile(r"^10\.\d{4,9}/\S+$", re.IGNORECASE)
 
@@ -121,7 +122,7 @@ async def resolve_doi(doi: str, settings: Settings) -> dict[str, object]:
     metadata: dict[str, object] = {"doi": normalized}
     sources_queried: list[str] = []
     candidates: list[dict[str, object]] = []
-    headers = {"User-Agent": "clio-search/0.1.0"}
+    headers = {"User-Agent": f"clio-web-search/{__version__}"}
     if settings.contact_email:
         headers["User-Agent"] += f" (mailto:{settings.contact_email})"
 

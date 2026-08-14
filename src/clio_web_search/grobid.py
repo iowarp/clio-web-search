@@ -9,7 +9,7 @@ from typing import Any
 import httpx
 from lxml import etree
 
-from clio_search.config import Settings
+from clio_web_search.config import Settings
 
 _NS = {"tei": "http://www.tei-c.org/ns/1.0"}
 

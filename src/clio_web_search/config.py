@@ -1,4 +1,4 @@
-"""Runtime configuration for a self-owned CLIO Search installation."""
+"""Runtime configuration for a self-owned CLIO Web Search installation."""
 
 from __future__ import annotations
 
@@ -9,13 +9,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Service settings loaded from ``CLIO_SEARCH_`` environment variables."""
+    """Service settings loaded from ``CLIO_WEB_SEARCH_`` environment variables."""
 
-    model_config = SettingsConfigDict(env_prefix="CLIO_SEARCH_", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="CLIO_WEB_SEARCH_", extra="ignore")
 
     host: str = "0.0.0.0"
     port: int = 8080
-    data_dir: Path = Path("/var/lib/clio-search")
+    data_dir: Path = Path("/var/lib/clio-web-search")
     searxng_url: str = "http://127.0.0.1:8888"
     grobid_url: str = "http://127.0.0.1:8070"
     contact_email: str | None = None

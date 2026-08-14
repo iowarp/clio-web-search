@@ -18,8 +18,8 @@ from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions, TableStructureV2Options
 from docling.document_converter import DocumentConverter, PdfFormatOption
 
-from clio_search.config import Settings
-from clio_search.grobid import enrich_pdf, looks_like_pdf
+from clio_web_search.config import Settings
+from clio_web_search.grobid import enrich_pdf, looks_like_pdf
 
 _PIPELINE_VERSION = "docling-2.119.0+grobid-0.9.0-crf+clio-3"
 _MAX_PUBLIC_ERROR_CHARS = 800
