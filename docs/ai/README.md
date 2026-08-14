@@ -32,6 +32,7 @@ behalf.
 ## Documentation map
 
 - [Deployment](../deployment.md)
+- [Other container platforms](../other-platforms.md)
 - [Supported providers](../providers.md)
 - [Security model](../security_model.md)
 - [Web MCP integration](../web-mcp.md)

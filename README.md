@@ -1,3 +1,5 @@
+![CLIO Web Search — self-hosted web search and document understanding for AI agents](docs/assets/clio-web-search-banner.png)
+
 # CLIO Web Search
 
 Self-hosted web search and document understanding for AI agents.
@@ -65,6 +67,7 @@ uvx --from clio-kit==2.9.0 \
 ## Documentation
 
 - [Deployment](docs/deployment.md)
+- [Other container platforms](docs/other-platforms.md)
 - [Supported providers](docs/providers.md)
 - [Security model](docs/security_model.md)
 - [Web MCP integration](docs/web-mcp.md)
