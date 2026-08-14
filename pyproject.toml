@@ -1,7 +1,7 @@
 [project]
-name = "clio-search"
-version = "0.1.0"
-description = "Self-hosted search and document-enrichment backend for the CLIO Web MCP"
+name = "clio-web-search"
+version = "0.2.0"
+description = "Self-hosted web search and document understanding for AI agents"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "AGPL-3.0-or-later"
@@ -20,6 +20,12 @@ dependencies = [
     "uvicorn[standard]>=0.35.0,<1",
 ]
 
+[project.urls]
+Homepage = "https://github.com/iowarp/clio-web-search"
+Documentation = "https://github.com/iowarp/clio-web-search/tree/main/docs"
+Issues = "https://github.com/iowarp/clio-web-search/issues"
+Repository = "https://github.com/iowarp/clio-web-search"
+
 [dependency-groups]
 dev = [
     "httpx2>=2.10.0",
@@ -33,14 +39,14 @@ dev = [
 ]
 
 [project.scripts]
-clio-search = "clio_search.main:run"
+clio-web-search = "clio_web_search.main:run"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/clio_search"]
+packages = ["src/clio_web_search"]
 
 [tool.ruff]
 line-length = 100
@@ -53,7 +59,7 @@ ignore = ["S101", "S104", "S603", "S607"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
-packages = ["clio_search"]
+packages = ["clio_web_search"]
 
 [[tool.mypy.overrides]]
 module = ["docling.*"]

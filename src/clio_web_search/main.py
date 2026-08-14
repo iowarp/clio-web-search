@@ -12,15 +12,15 @@ import uvicorn
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import JSONResponse, Response
 
-from clio_search import __version__
-from clio_search.config import Settings
-from clio_search.documents import DocumentQueue
-from clio_search.doi import normalize_doi, resolve_doi
-from clio_search.errors import error_response
+from clio_web_search import __version__
+from clio_web_search.config import Settings
+from clio_web_search.documents import DocumentQueue
+from clio_web_search.doi import normalize_doi, resolve_doi
+from clio_web_search.errors import error_response
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
-    """Create one configured CLIO Search application."""
+    """Create one configured CLIO Web Search application."""
 
     configured = settings or Settings()
     queue = DocumentQueue(configured)
@@ -31,7 +31,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         yield
         await queue.close()
 
-    app = FastAPI(title="CLIO Search", version=__version__, lifespan=lifespan)
+    app = FastAPI(title="CLIO Web Search", version=__version__, lifespan=lifespan)
     app.state.settings = configured
     app.state.queue = queue
 
@@ -61,7 +61,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/v1/capabilities")
     async def capabilities() -> dict[str, Any]:
         return {
-            "service": "clio-search",
+            "service": "clio-web-search",
             "version": __version__,
             "search": {"provider": "searxng", "path": "/search"},
             "documents": {
@@ -185,4 +185,4 @@ def run() -> None:
     """Run the production HTTP gateway."""
 
     settings = Settings()
-    uvicorn.run("clio_search.main:app", host=settings.host, port=settings.port)
+    uvicorn.run("clio_web_search.main:app", host=settings.host, port=settings.port)

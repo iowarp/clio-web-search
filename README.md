@@ -1,85 +1,79 @@
-# CLIO Search
+# CLIO Web Search
 
-CLIO Search is an optional, self-hosted search and document-enrichment backend
-for the CLIO Kit Web MCP. It packages SearXNG, Docling, GROBID CRF, DOI metadata
-resolution, and a durable document-conversion queue behind one HTTP origin.
+Self-hosted web search and document understanding for AI agents.
 
-It is distributed software, not a hosted IOWarp service. Every installation owns
-its endpoint, provider identity, optional keys, cache, and network exposure.
+We are building [CLIO Agent](https://github.com/iowarp/clio-agent), an SDK for creating
+scientific agents. Scientific work requires agents to discover technical information, retrieve
+many kinds of documents, process scientific papers, preserve scholarly metadata, and provide
+traceable sources for their conclusions.
 
-## Run
+Powerful libraries already address individual parts of this problem.
+[SearXNG](https://github.com/searxng/searxng) provides private, federated web search.
+[Docling](https://github.com/docling-project/docling) converts complex documents into structured
+representations. [GROBID](https://github.com/kermitt2/grobid) extracts scholarly metadata,
+references, and citation contexts from scientific papers. CLIO Web Search brings these
+capabilities together as a unified, self-hosted service designed for agent use.
+
+CLIO Web Search is designed to work with the
+[CLIO Kit Web MCP](https://github.com/iowarp/clio-kit/tree/main/clio-kit-mcp-servers/web). The Web
+MCP gives agents a small interface built around `search` and `fetch`, while CLIO Web Search
+supplies the search, document conversion, DOI resolution, and scientific-paper processing behind
+those tools.
+
+The Web MCP is part of [CLIO Kit](https://github.com/iowarp/clio-kit), a growing suite of
+scientific tools for agents. CLIO Web Search is distributed as an independent container and can
+be used by any compatible MCP client or agent system.
+
+An agent can search the web, fetch a URL or DOI, and receive readable Markdown together with
+structured metadata, references, and in-text citation contexts.
+
+## Deploy directly
 
 ```bash
-docker run --detach --name clio-search --restart unless-stopped \
+docker run --detach \
+  --name clio-web-search \
+  --restart unless-stopped \
   --publish 127.0.0.1:8088:8080 \
-  --env CLIO_SEARCH_CONTACT_EMAIL=you@example.org \
-  --volume clio-search-data:/var/lib/clio-search \
-  ghcr.io/iowarp/clio-search:0.1.0
+  --env CLIO_WEB_SEARCH_CONTACT_EMAIL=you@example.org \
+  --volume clio-web-search-data:/var/lib/clio-web-search \
+  ghcr.io/iowarp/clio-web-search:0.2.0
 ```
 
-Bind an explicit LAN address instead of `127.0.0.1` only when other trusted
-machines need access. CLIO Search has no Internet-facing authentication layer.
-The container entrypoint repairs ownership on an existing data volume and drops
-permanently to UID/GID 65534 before it starts SearXNG, GROBID, or the gateway.
+Docker pulls the published image automatically. A Git checkout is not required.
 
-The contact email is optional and has no built-in default. Without it, ordinary
-search and document conversion remain available, while Unpaywall enrichment is
-reported as disabled.
-
-## Web MCP
+## Or deploy with Compose
 
 ```bash
-uvx --from clio-kit clio-kit mcp-server web \
+git clone https://github.com/iowarp/clio-web-search.git
+cd clio-web-search
+docker compose up -d
+```
+
+The defaults bind the service to `127.0.0.1:8088`. Copy `.env.example` to `.env` to customize the
+deployment.
+
+## Connect the Web MCP
+
+```bash
+uvx --from clio-kit==2.9.0 \
+  clio-kit mcp-server web \
   -- \
   --provider searxng \
   --address http://127.0.0.1:8088
 ```
 
-The provider is selected when the MCP starts. It is not an agent-visible search
-parameter. Install a second named MCP server if an agent needs another provider.
+## Documentation
 
-## API
+- [Deployment](docs/deployment.md)
+- [Supported providers](docs/providers.md)
+- [Security model](docs/security_model.md)
+- [Web MCP integration](docs/web-mcp.md)
+- [HTTP API](docs/api.md)
 
-- `GET /healthz` — gateway liveness.
-- `GET /readyz` — SearXNG and durable queue readiness.
-- `GET /v1/capabilities` — enabled search, document, and scholarly features.
-- `GET|POST /search` — SearXNG-compatible search endpoint.
-- `POST /v1/doi/resolve` — normalized metadata and lawful access candidates.
-- `POST /v1/documents` — content-addressed document submission.
-- `GET /v1/documents/{id}` — durable conversion status or result.
+### LLMs start here
 
-Document results contain Markdown plus Docling structure. Scholarly PDFs can add
-GROBID header metadata, bibliography entries, and in-text citation contexts.
-Citation traversal remains the research agent's responsibility.
-
-## Configuration
-
-All settings use the `CLIO_SEARCH_` prefix. Important fields are
-`CONTACT_EMAIL`, `OPENALEX_API_KEY`, `DATA_DIR`, `MAX_INPUT_BYTES`, `WORKERS`,
-`MAX_PENDING_JOBS`, `CACHE_TTL_DAYS`, and `CACHE_MAX_BYTES`.
-
-The default queue has one worker and 32 pending slots. Its SQLite state and
-content-addressed objects survive restarts in `/var/lib/clio-search`. Valkey is
-not used or required.
-
-## Verification
-
-```bash
-curl --fail http://127.0.0.1:8088/healthz
-curl --fail http://127.0.0.1:8088/readyz
-curl --get http://127.0.0.1:8088/search \
-  --data-urlencode 'q=exact attention' \
-  --data 'format=json&categories=science'
-```
-
-`/readyz` is ready only when the gateway, SearXNG, GROBID, and persistent queue
-are available. A search remains successful when it has useful results; any
-secondary engine rate limits or CAPTCHA responses remain visible in SearXNG's
-`unresponsive_engines` field.
-
-The release workflow builds `linux/amd64` and `linux/arm64` images. Each release
-is pinned by its immutable image digest; use that digest when reproducibility is
-more important than a movable semantic-version tag.
+The [AI integration guide](docs/ai/README.md) is the entry point for agents, coding assistants, and
+automated repository tools.
 
 ## Development
 
@@ -92,5 +86,4 @@ uv run pyright
 uv run pytest
 ```
 
-See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the major bundled
-components and their pinned versions.
+See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for bundled components and licenses.

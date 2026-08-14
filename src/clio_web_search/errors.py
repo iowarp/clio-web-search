@@ -15,7 +15,7 @@ def error_response(
     retryable: bool = False,
     details: dict[str, Any] | None = None,
 ) -> JSONResponse:
-    """Return the stable CLIO Search error envelope."""
+    """Return the stable CLIO Web Search error envelope."""
 
     return JSONResponse(
         status_code=status_code,

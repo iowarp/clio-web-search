@@ -44,31 +44,31 @@ RUN /app/.venv/bin/docling-tools models download \
 COPY src ./src
 RUN uv sync --frozen --no-dev
 
-COPY container/datacite.py container/patch_searxng.py /opt/clio-search-build/
-RUN /opt/searxng/.venv/bin/python /opt/clio-search-build/patch_searxng.py \
-    && rm -rf /opt/clio-search-build
+COPY container/datacite.py container/patch_searxng.py /opt/clio-web-search-build/
+RUN /opt/searxng/.venv/bin/python /opt/clio-web-search-build/patch_searxng.py \
+    && rm -rf /opt/clio-web-search-build
 
-COPY container/entrypoint.sh /usr/local/bin/clio-search-entrypoint
-RUN chmod 0755 /usr/local/bin/clio-search-entrypoint \
-    && mkdir -p /var/lib/clio-search /opt/grobid/grobid-home/tmp \
+COPY container/entrypoint.sh /usr/local/bin/clio-web-search-entrypoint
+RUN chmod 0755 /usr/local/bin/clio-web-search-entrypoint \
+    && mkdir -p /var/lib/clio-web-search /opt/grobid/grobid-home/tmp \
     && chown 65534:65534 /opt/grobid/grobid-home/tmp \
-    && chmod 0770 /var/lib/clio-search /opt/grobid/grobid-home/tmp
+    && chmod 0770 /var/lib/clio-web-search /opt/grobid/grobid-home/tmp
 
-ENV CLIO_SEARCH_SEARXNG_URL=http://127.0.0.1:8888 \
-    CLIO_SEARCH_GROBID_URL=http://127.0.0.1:8070 \
-    CLIO_SEARCH_DATA_DIR=/var/lib/clio-search \
-    HF_HOME=/var/lib/clio-search/huggingface \
+ENV CLIO_WEB_SEARCH_SEARXNG_URL=http://127.0.0.1:8888 \
+    CLIO_WEB_SEARCH_GROBID_URL=http://127.0.0.1:8070 \
+    CLIO_WEB_SEARCH_DATA_DIR=/var/lib/clio-web-search \
+    HF_HOME=/var/lib/clio-web-search/huggingface \
     DOCLING_ARTIFACTS_PATH=/opt/docling-models
 
-LABEL org.opencontainers.image.title="CLIO Search" \
-      org.opencontainers.image.description="Self-hosted SearXNG, Docling, GROBID, and DOI enrichment for CLIO" \
+LABEL org.opencontainers.image.title="CLIO Web Search" \
+      org.opencontainers.image.description="Self-hosted web search and document understanding for AI agents" \
       org.opencontainers.image.licenses="AGPL-3.0-or-later" \
-      org.opencontainers.image.version="0.1.0" \
-      org.opencontainers.image.source="https://github.com/iowarp/clio-search"
+      org.opencontainers.image.version="0.2.0" \
+      org.opencontainers.image.source="https://github.com/iowarp/clio-web-search"
 
-VOLUME ["/var/lib/clio-search"]
+VOLUME ["/var/lib/clio-web-search"]
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=180s --retries=3 \
     CMD curl --fail --silent http://127.0.0.1:8080/healthz >/dev/null || exit 1
 
-ENTRYPOINT ["/tini", "-s", "--", "/usr/local/bin/clio-search-entrypoint"]
+ENTRYPOINT ["/tini", "-s", "--", "/usr/local/bin/clio-web-search-entrypoint"]

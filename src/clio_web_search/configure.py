@@ -9,7 +9,7 @@ from typing import Any
 
 import yaml
 
-from clio_search.config import Settings
+from clio_web_search.config import Settings
 
 _ENGINE_NAMES = [
     "arxiv",
@@ -63,7 +63,7 @@ def build_searxng_settings(settings: Settings, *, secret_key: str) -> dict[str, 
         "use_default_settings": {"engines": {"keep_only": _ENGINE_NAMES}},
         "general": {
             "debug": False,
-            "instance_name": "CLIO Search",
+            "instance_name": "CLIO Web Search",
             "enable_metrics": True,
         },
         "search": {
