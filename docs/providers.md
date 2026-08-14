@@ -30,7 +30,14 @@ their own rate limits or anti-automation controls.
 | PubMed | Biomedical discovery | No key in the bundled configuration |
 | Semantic Scholar | Scholarly discovery | No key in the bundled configuration |
 
-Set optional provider values in `.env`:
+Compose reads provider configuration from a local `.env` file. Create it from the tracked,
+secret-free placeholder:
+
+```bash
+cp .env.example .env
+```
+
+Then set the providers you want to enable:
 
 ```dotenv
 CLIO_WEB_SEARCH_CONTACT_EMAIL=you@example.org

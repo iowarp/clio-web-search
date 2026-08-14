@@ -5,5 +5,6 @@
 __pycache__/
 *.pyc
 dist/
+# Local deployment settings and secrets; copy .env.example to create this file.
 .env
 data/

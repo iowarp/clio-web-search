@@ -1,6 +1,6 @@
-![CLIO Web Search — self-hosted web search and document understanding for AI agents](docs/assets/clio-web-search-banner.png)
-
 # CLIO Web Search
+
+![CLIO Web Search — self-hosted web search and document understanding for AI agents](docs/assets/clio-web-search-banner.png)
 
 Self-hosted web search and document understanding for AI agents.
 
