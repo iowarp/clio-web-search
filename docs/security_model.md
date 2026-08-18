@@ -12,18 +12,25 @@ authorization, TLS termination, or an Internet-facing rate limiter.
 
 ## Container behavior
 
-The container starts as root only to repair ownership of `/var/lib/clio-web-search`. The entrypoint then
-drops permanently to UID/GID `65534` before starting SearXNG, GROBID, and the gateway. The Compose
-configuration enables `no-new-privileges` and disables core dumps.
+The container starts as root only to repair ownership of `/var/lib/clio-web-search`. The entrypoint
+then drops permanently to UID/GID `65534` before starting SearXNG, GROBID, Valkey, and the gateway.
+The Compose configuration enables `no-new-privileges` and disables core dumps.
 
-SearXNG and GROBID bind to loopback inside the container. Only the gateway on port `8080` is
-published.
+SearXNG and GROBID bind to loopback inside the container. The HTTP gateway and Valkey RESP ports
+are published on the explicitly configured host interface. Keep the trusted default off public
+interfaces.
 
 ## Data and secrets
 
-Submitted documents, converted results, queue state, cache data, and the generated SearXNG secret
-are stored in `/var/lib/clio-web-search`. Protect and back up the Docker volume according to the
-sensitivity of the documents being processed.
+Submitted documents, converted results, queue state, and progress logs are stored in
+`/var/lib/clio-web-search`; Valkey's Docket state is stored in its `/data`-backed subvolume. Protect
+both according to the sensitivity of the documents and task context being processed.
+
+Trusted mode deliberately has no Valkey password and must be bound only to a trusted LAN/Tailscale
+address. Setting `CLIO_WEB_SEARCH_TASK_BACKEND_API_TOKEN` enables authenticated bootstrap: the API
+derives stable credentials, provisions a Valkey ACL user limited to that agent's queue prefix, and
+returns the credential only to an authorized caller. TLS mode builds Valkey with TLS support and
+requires explicitly mounted certificate material.
 
 The optional contact email is sent to scholarly providers that support polite identification. The
 optional OpenAlex key is sent only to OpenAlex. Environment variables can be visible through Docker

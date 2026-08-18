@@ -1,6 +1,6 @@
 [project]
 name = "clio-web-search"
-version = "0.2.0"
+version = "0.3.0"
 description = "Self-hosted web search and document understanding for AI agents"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -15,6 +15,7 @@ dependencies = [
     "pydantic-settings>=2.10.0,<3",
     "python-multipart>=0.0.20,<1",
     "pyyaml>=6.0.2,<7",
+    "redis>=6.4.0,<7",
     "torch>=2.8.0",
     "torchvision>=0.23.0",
     "uvicorn[standard]>=0.35.0,<1",
@@ -69,6 +70,8 @@ ignore_missing_imports = true
 pythonVersion = "3.12"
 typeCheckingMode = "strict"
 include = ["src"]
+venvPath = "."
+venv = ".venv"
 reportUnusedFunction = false
 
 [tool.pytest.ini_options]

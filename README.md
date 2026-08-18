@@ -22,6 +22,11 @@ MCP gives agents a small interface built around `search` and `fetch`, while CLIO
 supplies the search, document conversion, DOI resolution, and scientific-paper processing behind
 those tools.
 
+The container also bundles Valkey for the Web MCP's FastMCP/Docket task state. A locally installed
+Web MCP needs only this service's HTTP URL: it discovers the Valkey endpoint and an isolated queue
+namespace automatically. The MCP task remains agent-local; document conversion remains durable in
+this service.
+
 The Web MCP is part of [CLIO Kit](https://github.com/iowarp/clio-kit), a growing suite of
 scientific tools for agents. CLIO Web Search is distributed as an independent container and can
 be used by any compatible MCP client or agent system.
@@ -35,13 +40,16 @@ structured metadata, references, and in-text citation contexts.
 docker run --detach \
   --name clio-web-search \
   --restart unless-stopped \
-  --publish 127.0.0.1:8088:8080 \
+  --publish 127.0.0.1:8089:8080 \
+  --publish 127.0.0.1:8090:6379 \
   --env CLIO_WEB_SEARCH_CONTACT_EMAIL=you@example.org \
   --volume clio-web-search-data:/var/lib/clio-web-search \
-  ghcr.io/iowarp/clio-web-search:0.2.0
+  ghcr.io/iowarp/clio-web-search:0.3.0
 ```
 
 Docker pulls the published image automatically. A Git checkout is not required.
+Container health remains in `starting` until Docling's PDF pipeline has been loaded and warmed.
+Conversions have no overall elapsed-time deadline; only bounded upstream network requests time out.
 
 ## Or deploy with Compose
 
@@ -51,17 +59,16 @@ cd clio-web-search
 docker compose up -d
 ```
 
-The defaults bind the service to `127.0.0.1:8088`. Copy `.env.example` to `.env` to customize the
+The defaults bind HTTP to `127.0.0.1:8089` and Valkey to `127.0.0.1:8090`. Copy `.env.example` to `.env` to customize the
 deployment.
 
 ## Connect the Web MCP
 
 ```bash
-uvx --from clio-kit==2.9.0 \
+uvx --from clio-kit==2.10.0 \
   clio-kit mcp-server web \
   -- \
-  --provider searxng \
-  --address http://127.0.0.1:8088
+  --remote-url http://127.0.0.1:8089
 ```
 
 ## Documentation
@@ -71,6 +78,7 @@ uvx --from clio-kit==2.9.0 \
 - [Supported providers](docs/providers.md)
 - [Security model](docs/security_model.md)
 - [Web MCP integration](docs/web-mcp.md)
+- [FastMCP task infrastructure](docs/task-backend.md)
 - [HTTP API](docs/api.md)
 
 ### LLMs start here

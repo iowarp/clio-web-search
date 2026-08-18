@@ -1,15 +1,19 @@
 services:
   clio-web-search:
     # Override CLIO_WEB_SEARCH_IMAGE to pin an immutable digest or test another release.
-    image: "${CLIO_WEB_SEARCH_IMAGE:-ghcr.io/iowarp/clio-web-search:0.2.0}"
+    image: "${CLIO_WEB_SEARCH_IMAGE:-ghcr.io/iowarp/clio-web-search:0.3.0}"
     container_name: clio-web-search
     restart: unless-stopped
     init: true
+    # Bound the combined GROBID, Docling, SearXNG, and Valkey footprint so a
+    # failed startup cannot invoke the host OOM killer.
+    mem_limit: "${CLIO_WEB_SEARCH_MEMORY_LIMIT:-5g}"
     # The entrypoint repairs the data-volume ownership, then drops to UID/GID 65534.
     user: "0:0"
     ports:
       # Keep the default loopback binding unless trusted LAN clients need access.
-      - "${CLIO_WEB_SEARCH_BIND_ADDRESS:-127.0.0.1}:${CLIO_WEB_SEARCH_PORT:-8088}:8080"
+      - "${CLIO_WEB_SEARCH_BIND_ADDRESS:-127.0.0.1}:${CLIO_WEB_SEARCH_PORT:-8089}:8080"
+      - "${CLIO_WEB_SEARCH_BIND_ADDRESS:-127.0.0.1}:${CLIO_WEB_SEARCH_VALKEY_PORT:-8090}:6379"
     environment:
       # Optional identification for Crossref and required to enable Unpaywall.
       CLIO_WEB_SEARCH_CONTACT_EMAIL: "${CLIO_WEB_SEARCH_CONTACT_EMAIL:-}"
@@ -21,10 +25,28 @@ services:
       CLIO_WEB_SEARCH_MAX_PENDING_JOBS: "${CLIO_WEB_SEARCH_MAX_PENDING_JOBS:-32}"
       CLIO_WEB_SEARCH_CACHE_TTL_DAYS: "${CLIO_WEB_SEARCH_CACHE_TTL_DAYS:-7}"
       CLIO_WEB_SEARCH_CACHE_MAX_BYTES: "${CLIO_WEB_SEARCH_CACHE_MAX_BYTES:-10737418240}"
-      CLIO_WEB_SEARCH_CONVERSION_TIMEOUT_S: "${CLIO_WEB_SEARCH_CONVERSION_TIMEOUT_S:-900}"
       CLIO_WEB_SEARCH_REQUEST_TIMEOUT_S: "${CLIO_WEB_SEARCH_REQUEST_TIMEOUT_S:-30}"
+      # This is only the per-request GROBID network timeout; conversion has no deadline.
+      CLIO_WEB_SEARCH_GROBID_REQUEST_TIMEOUT_S: "${CLIO_WEB_SEARCH_GROBID_REQUEST_TIMEOUT_S:-900}"
+      CLIO_WEB_SEARCH_PROGRESS_INTERVAL_S: "${CLIO_WEB_SEARCH_PROGRESS_INTERVAL_S:-5}"
+      CLIO_WEB_SEARCH_DEPLOYMENT_ID: "${CLIO_WEB_SEARCH_DEPLOYMENT_ID:-homelab}"
+      CLIO_WEB_SEARCH_TASK_BACKEND_PUBLIC_HOST: "${CLIO_WEB_SEARCH_TASK_BACKEND_PUBLIC_HOST:-}"
+      CLIO_WEB_SEARCH_TASK_BACKEND_PUBLIC_PORT: "${CLIO_WEB_SEARCH_VALKEY_PORT:-8090}"
+      CLIO_WEB_SEARCH_TASK_BACKEND_API_TOKEN: "${CLIO_WEB_SEARCH_TASK_BACKEND_API_TOKEN:-}"
+      CLIO_WEB_SEARCH_TASK_BACKEND_TLS: "${CLIO_WEB_SEARCH_TASK_BACKEND_TLS:-false}"
+      CLIO_WEB_SEARCH_TASK_BACKEND_TLS_CERT_FILE: "${CLIO_WEB_SEARCH_TASK_BACKEND_TLS_CERT_FILE:-}"
+      CLIO_WEB_SEARCH_TASK_BACKEND_TLS_KEY_FILE: "${CLIO_WEB_SEARCH_TASK_BACKEND_TLS_KEY_FILE:-}"
+      CLIO_WEB_SEARCH_TASK_BACKEND_CA_PATH: "${CLIO_WEB_SEARCH_TASK_BACKEND_CA_PATH:-}"
+      # GROBID's base image otherwise sizes its heap from all host memory.
+      JAVA_OPTS: "${CLIO_WEB_SEARCH_JAVA_OPTS:--Xms256m -Xmx1536m -XX:MaxDirectMemorySize=256m -XX:+ExitOnOutOfMemoryError}"
+      # Keep Docling/PyTorch native libraries from creating a thread per core.
+      OMP_NUM_THREADS: "${CLIO_WEB_SEARCH_NATIVE_THREADS:-2}"
+      MKL_NUM_THREADS: "${CLIO_WEB_SEARCH_NATIVE_THREADS:-2}"
+      OPENBLAS_NUM_THREADS: "${CLIO_WEB_SEARCH_NATIVE_THREADS:-2}"
+      NUMEXPR_NUM_THREADS: "${CLIO_WEB_SEARCH_NATIVE_THREADS:-2}"
     volumes:
       - clio-web-search-data:/var/lib/clio-web-search
+      - "${CLIO_WEB_SEARCH_VALKEY_DATA_PATH:-/data/clio-web-search/valkey}:/var/lib/clio-web-search/valkey"
     security_opt:
       - no-new-privileges:true
     ulimits:

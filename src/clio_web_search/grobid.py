@@ -38,7 +38,8 @@ def _person_name(element: Any | None) -> str | None:
     return " ".join(parts) if parts else _text(element)
 
 
-def _parse_tei(tei: str) -> dict[str, Any]:
+def parse_tei(tei: str) -> dict[str, Any]:
+    """Normalize GROBID TEI into metadata, references, and citation contexts."""
     parser = etree.XMLParser(resolve_entities=False, no_network=True, recover=True)
     root = etree.fromstring(tei.encode(), parser=parser)
     title = _text(root.find(".//tei:titleStmt/tei:title", _NS))
@@ -131,7 +132,7 @@ def _pointer_target(element: Any | None) -> str | None:
 async def enrich_pdf(path: Path, settings: Settings, *, force_scholarly: bool) -> dict[str, Any]:
     """Return optional GROBID enrichment for a PDF."""
 
-    timeout = httpx.Timeout(settings.conversion_timeout_s)
+    timeout = httpx.Timeout(settings.grobid_request_timeout_s)
     async with httpx.AsyncClient(timeout=timeout) as client:
         with path.open("rb") as handle:
             header_response = await client.post(
@@ -140,7 +141,7 @@ async def enrich_pdf(path: Path, settings: Settings, *, force_scholarly: bool) -
             )
         if header_response.status_code != 200:
             raise RuntimeError(f"GROBID header returned HTTP {header_response.status_code}")
-        header = _parse_tei(header_response.text)
+        header = parse_tei(header_response.text)
         metadata = header.get("metadata", {})
         scholarly = force_scholarly or bool(
             metadata.get("doi") or (metadata.get("title") and metadata.get("authors"))
@@ -160,7 +161,7 @@ async def enrich_pdf(path: Path, settings: Settings, *, force_scholarly: bool) -
             )
         if full_response.status_code != 200:
             raise RuntimeError(f"GROBID full text returned HTTP {full_response.status_code}")
-        parsed = _parse_tei(full_response.text)
+        parsed = parse_tei(full_response.text)
         parsed["profile"] = "scholarly"
         return parsed
 
