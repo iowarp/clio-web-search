@@ -2,38 +2,56 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
+import logging
+from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any
 
 import httpx
 import uvicorn
-from fastapi import FastAPI, File, Form, Request, UploadFile
+from fastapi import FastAPI, File, Form, Header, Request, UploadFile
 from fastapi.responses import JSONResponse, Response
 
 from clio_web_search import __version__
 from clio_web_search.config import Settings
+from clio_web_search.docling_worker import ConversionWorker, DoclingProcessWorker
 from clio_web_search.documents import DocumentQueue
 from clio_web_search.doi import normalize_doi, resolve_doi
 from clio_web_search.errors import error_response
+from clio_web_search.task_backend import (
+    InvalidAgentIdError,
+    TaskBackendAuthorizationError,
+    TaskBackendError,
+    TaskBackendManager,
+)
+
+app_logger = logging.getLogger(__name__)
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    *,
+    worker_factory: Callable[[], ConversionWorker] = DoclingProcessWorker,
+) -> FastAPI:
     """Create one configured CLIO Web Search application."""
 
     configured = settings or Settings()
-    queue = DocumentQueue(configured)
+    queue = DocumentQueue(configured, worker_factory=worker_factory)
+    task_backend = TaskBackendManager(configured)
 
     @asynccontextmanager
-    async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
+    async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await queue.start()
-        yield
-        await queue.close()
+        try:
+            yield
+        finally:
+            await queue.close()
 
     app = FastAPI(title="CLIO Web Search", version=__version__, lifespan=lifespan)
     app.state.settings = configured
     app.state.queue = queue
+    app.state.task_backend = task_backend
 
     @app.get("/healthz")
     async def health() -> dict[str, str]:
@@ -41,7 +59,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/readyz")
     async def ready() -> Response:
-        checks: dict[str, str] = {"queue": "ready"}
+        checks: dict[str, str] = {"docling": "ready" if queue.ready else "unavailable"}
+        if task_backend.enabled:
+            checks["valkey"] = "ready" if await task_backend.ready() else "unavailable"
         async with httpx.AsyncClient(timeout=3.0) as client:
             for name, url in {
                 "searxng": f"{configured.searxng_url.rstrip('/')}/config",
@@ -59,7 +79,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     @app.get("/v1/capabilities")
-    async def capabilities() -> dict[str, Any]:
+    async def capabilities(request: Request) -> dict[str, Any]:
         return {
             "service": "clio-web-search",
             "version": __version__,
@@ -79,7 +99,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "extractors": ["docling-2.119.0", "grobid-0.9.0-crf"],
                 "max_input_bytes": configured.max_input_bytes,
                 "queue": await queue.counts(),
+                "overall_conversion_timeout": None,
             },
+            "task_backend": task_backend.descriptor(request.url.hostname),
             "scholarly": {
                 "datacite_search": True,
                 "doi_resolution": True,
@@ -92,6 +114,46 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "openalex_api_key_configured": bool(configured.openalex_api_key),
             },
         }
+
+    @app.post("/v1/task-backend/session")
+    async def task_backend_session(
+        request: Request,
+        payload: dict[str, Any],
+        authorization: Annotated[str | None, Header()] = None,
+    ) -> Response:
+        agent_id = str(payload.get("agent_id", ""))
+        try:
+            session = await task_backend.issue_session(
+                agent_id=agent_id,
+                authorization=authorization,
+                request_host=request.url.hostname,
+            )
+        except TaskBackendAuthorizationError as exc:
+            return error_response(
+                401,
+                "task_backend_unauthorized",
+                str(exc),
+                stage="task_backend_discovery",
+                remediation="Provide the configured bearer token and retry discovery.",
+            )
+        except InvalidAgentIdError as exc:
+            return error_response(
+                422,
+                "invalid_agent_id",
+                str(exc),
+                stage="task_backend_discovery",
+                remediation="Use the locally persisted CLIO Web MCP agent identifier.",
+            )
+        except TaskBackendError as exc:
+            return error_response(
+                503,
+                "task_backend_unavailable",
+                str(exc),
+                retryable=True,
+                stage="task_backend_discovery",
+                remediation="Check Valkey readiness and the deployment task-backend settings.",
+            )
+        return JSONResponse(content=session)
 
     @app.post("/v1/doi/resolve")
     async def doi_resolve(payload: dict[str, Any]) -> Response:
@@ -112,7 +174,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return error_response(
                 413,
                 "document_too_large",
-                f"document exceeds {configured.max_input_bytes} bytes",
+                f"The document exceeds the {configured.max_input_bytes}-byte conversion limit.",
+                stage="input_validation",
+                remediation="Provide a smaller document or raise the configured input limit.",
             )
         safe_name = Path(file.filename or "document").name
         result = await queue.submit(
@@ -123,7 +187,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             doi=doi,
         )
         if result["status"] == "queue_full":
-            return error_response(429, "queue_full", "document queue is full", retryable=True)
+            return error_response(
+                429,
+                "queue_full",
+                "The document conversion queue is full.",
+                retryable=True,
+                stage="admission",
+                remediation="Wait for an active conversion to finish, then retry.",
+            )
         status_code = 200 if result["status"] == "complete" else 202
         return JSONResponse(status_code=status_code, content=result)
 
@@ -131,9 +202,54 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def get_document(job_id: str) -> Response:
         result = await queue.get(job_id)
         if result is None:
-            return error_response(404, "conversion_not_found", "conversion does not exist")
-        status_code = 200 if result["status"] in {"complete", "failed"} else 202
+            return error_response(
+                404,
+                "conversion_not_found",
+                "The requested document conversion does not exist or has expired.",
+                stage="lookup",
+                remediation="Submit the document again to obtain a current conversion ID.",
+                conversion_id=job_id,
+            )
+        status_code = 200 if result["status"] in {"complete", "failed", "cancelled"} else 202
         return JSONResponse(status_code=status_code, content=result)
+
+    @app.get("/v1/documents/{job_id}/events")
+    async def get_document_events(
+        job_id: str,
+        after_sequence: int = 0,
+        limit: int = 100,
+    ) -> Response:
+        if await queue.get(job_id, include_events=False) is None:
+            return error_response(
+                404,
+                "conversion_not_found",
+                "The requested document conversion does not exist or has expired.",
+                stage="event_lookup",
+                remediation="Submit the document again to obtain a current conversion ID.",
+                conversion_id=job_id,
+            )
+        events = await queue.events(job_id, after_sequence=after_sequence, limit=limit)
+        return JSONResponse(
+            content={
+                "conversion_id": job_id,
+                "events": events,
+                "next_sequence": events[-1]["sequence"] if events else after_sequence,
+            }
+        )
+
+    @app.post("/v1/documents/{job_id}/cancel")
+    async def cancel_document(job_id: str) -> Response:
+        result = await queue.cancel(job_id)
+        if result is None:
+            return error_response(
+                404,
+                "conversion_not_found",
+                "The requested document conversion does not exist or has expired.",
+                stage="cancellation",
+                remediation="Check the conversion ID before retrying cancellation.",
+                conversion_id=job_id,
+            )
+        return JSONResponse(content=result)
 
     @app.api_route("/search", methods=["GET", "POST"])
     async def search_proxy(request: Request) -> Response:
@@ -163,7 +279,15 @@ async def _proxy(request: Request, settings: Settings, path: str) -> Response:
                 headers=headers,
             )
     except httpx.HTTPError as exc:
-        return error_response(502, "searxng_unavailable", str(exc), retryable=True)
+        app_logger.warning("SearXNG proxy request failed", exc_info=exc)
+        return error_response(
+            502,
+            "searxng_unavailable",
+            "The configured search service did not answer this request.",
+            retryable=True,
+            stage="search",
+            remediation="Retry shortly; if the failure persists, check SearXNG readiness.",
+        )
     response_headers = {
         key: value
         for key, value in response.headers.items()

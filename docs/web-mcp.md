@@ -7,22 +7,20 @@ provides the agent-facing `search` and `fetch` tools. The provider is fixed when
 
 ```bash
 codex mcp add web -- \
-  uvx --from clio-kit==2.9.0 \
+  uvx --from clio-kit==2.10.0 \
   clio-kit mcp-server web \
   -- \
-  --provider searxng \
-  --address http://127.0.0.1:8088
+  --remote-url http://127.0.0.1:8089
 ```
 
 ## Claude Code
 
 ```bash
 claude mcp add web -- \
-  uvx --from clio-kit==2.9.0 \
+  uvx --from clio-kit==2.10.0 \
   clio-kit mcp-server web \
   -- \
-  --provider searxng \
-  --address http://127.0.0.1:8088
+  --remote-url http://127.0.0.1:8089
 ```
 
 ## MCP configuration
@@ -34,15 +32,13 @@ claude mcp add web -- \
       "command": "uvx",
       "args": [
         "--from",
-        "clio-kit==2.9.0",
+        "clio-kit==2.10.0",
         "clio-kit",
         "mcp-server",
         "web",
         "--",
-        "--provider",
-        "searxng",
-        "--address",
-        "http://127.0.0.1:8088"
+        "--remote-url",
+        "http://127.0.0.1:8089"
       ]
     }
   }
@@ -57,7 +53,14 @@ Replace the address with the trusted LAN endpoint when the service runs on anoth
   scholarly result metadata when available.
 - `fetch` accepts an HTTP(S) URL or DOI. It reads HTML and text locally and sends supported
   documents to CLIO Web Search.
-- Long conversions return a durable conversion ID and retry interval. Repeating the fetch resumes
-  the content-addressed job.
+- `fetch` runs as a native MCP task until its conversion completes or the agent cancels it.
+- `tasks/get` exposes the latest progress message and `fetch_events` returns the full ordered log.
 
 The Web MCP capability resource, `web://capabilities`, describes the active installation.
+
+## Native fetch tasks
+
+The CLIO Kit Web MCP remains the only combined `search` and `fetch` MCP interface. Its `fetch` tool
+uses FastMCP tasks and discovers the bundled Valkey service from the CLIO Web Search HTTP URL.
+CLIO Web Search does not expose a duplicate document-conversion MCP. See
+[FastMCP task infrastructure](task-backend.md).

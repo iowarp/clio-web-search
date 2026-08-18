@@ -1,6 +1,6 @@
 """GROBID TEI normalization tests."""
 
-from clio_web_search.grobid import _parse_tei
+from clio_web_search.grobid import parse_tei
 
 
 def test_parse_tei_preserves_references_and_contexts() -> None:
@@ -17,7 +17,7 @@ def test_parse_tei_preserves_references_and_contexts() -> None:
       </analytic></biblStruct></listBibl></back></text>
     </TEI>"""
 
-    parsed = _parse_tei(tei)
+    parsed = parse_tei(tei)
 
     assert parsed["metadata"] == {
         "title": "Research Paper",
@@ -46,7 +46,7 @@ def test_parse_tei_reads_grobid_source_description_authors_and_dates() -> None:
     </persName></author></analytic><monogr><title level="j">Proceedings</title></monogr>
     </biblStruct></sourceDesc></fileDesc></teiHeader></TEI>"""
 
-    parsed = _parse_tei(tei)
+    parsed = parse_tei(tei)
 
     assert parsed["metadata"] == {
         "title": "Attention Is All You Need",

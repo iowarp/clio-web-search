@@ -13,6 +13,9 @@ def error_response(
     message: str,
     *,
     retryable: bool = False,
+    stage: str | None = None,
+    remediation: str | None = None,
+    conversion_id: str | None = None,
     details: dict[str, Any] | None = None,
 ) -> JSONResponse:
     """Return the stable CLIO Web Search error envelope."""
@@ -23,6 +26,9 @@ def error_response(
             "code": code,
             "message": message,
             "retryable": retryable,
+            "stage": stage,
+            "remediation": remediation,
+            "conversion_id": conversion_id,
             "details": details or {},
         },
     )

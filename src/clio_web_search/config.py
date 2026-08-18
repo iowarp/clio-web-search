@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -25,8 +25,32 @@ class Settings(BaseSettings):
     max_pending_jobs: int = Field(default=32, ge=1, le=4096)
     cache_ttl_days: int = Field(default=7, ge=1, le=365)
     cache_max_bytes: int = 10 * 1024 * 1024 * 1024
-    conversion_timeout_s: float = 900.0
     request_timeout_s: float = 30.0
+    grobid_request_timeout_s: float = Field(default=900.0, gt=0)
+    progress_interval_s: float = Field(default=5.0, gt=0)
+    deployment_id: str = Field(default="default", min_length=1, max_length=64)
+    task_backend_url: SecretStr | None = None
+    task_backend_public_host: str | None = None
+    task_backend_public_port: int = Field(default=8090, ge=1, le=65535)
+    task_backend_database: int = Field(default=0, ge=0, le=15)
+    task_backend_tls: bool = False
+    task_backend_api_token: SecretStr | None = None
+    task_backend_credential_secret: SecretStr | None = None
+    task_backend_ca_path: Path | None = None
+
+    @field_validator(
+        "task_backend_url",
+        "task_backend_api_token",
+        "task_backend_credential_secret",
+        mode="before",
+    )
+    @classmethod
+    def blank_secret_is_none(cls, value: object) -> object:
+        """Treat blank optional secrets as absent deployment settings."""
+
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
     @property
     def database_path(self) -> Path:
