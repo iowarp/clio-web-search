@@ -113,6 +113,37 @@ def _datacite_metadata(attributes: dict[str, object]) -> dict[str, object]:
     }
 
 
+def _openalex_metadata(body: dict[str, object]) -> dict[str, object]:
+    authorships_value = body.get("authorships")
+    authorships = cast(list[object], authorships_value) if isinstance(authorships_value, list) else []
+    authors: list[str] = []
+    for entry in authorships:
+        if isinstance(entry, dict):
+            author = cast(dict[str, object], entry).get("author")
+            if isinstance(author, dict):
+                name = cast(dict[str, object], author).get("display_name")
+                if name:
+                    authors.append(str(name))
+    open_access_value = body.get("open_access")
+    open_access = cast(dict[str, object], open_access_value) if isinstance(open_access_value, dict) else {}
+    oa_url = open_access.get("oa_url")
+    primary_location_value = body.get("primary_location")
+    primary_location = (
+        cast(dict[str, object], primary_location_value)
+        if isinstance(primary_location_value, dict)
+        else {}
+    )
+    source_value = primary_location.get("source")
+    source = cast(dict[str, object], source_value) if isinstance(source_value, dict) else {}
+    return {
+        "title": body.get("display_name"),
+        "authors": authors,
+        "published_at": body.get("publication_date"),
+        "journal": source.get("display_name"),
+        "oa_url": oa_url,
+    }
+
+
 async def resolve_doi(doi: str, settings: Settings) -> dict[str, object]:
     """Resolve DOI metadata and ordered lawful access candidates."""
 
@@ -173,6 +204,29 @@ async def resolve_doi(doi: str, settings: Settings) -> dict[str, object]:
                     warnings.append({"code": "datacite_unavailable", "source": "datacite"})
             except (httpx.HTTPError, ValueError, TypeError):
                 warnings.append({"code": "datacite_unavailable", "source": "datacite"})
+
+        try:
+            sources_queried.append("openalex")
+            openalex_url = f"https://api.openalex.org/works/doi:{encoded}"
+            if settings.openalex_api_key:
+                openalex_url += f"?api_key={quote(settings.openalex_api_key, safe='')}"
+            response = await client.get(openalex_url)
+            if response.status_code == 200:
+                body = cast(dict[str, object], response.json())
+                resolved = _openalex_metadata(body)
+                metadata.update(
+                    {k: v for k, v in resolved.items() if v and k != "oa_url"}
+                )
+                if resolved.get("oa_url"):
+                    candidates.append(
+                        {"url": resolved["oa_url"], "source": "openalex", "version": None}
+                    )
+            elif response.status_code == 404:
+                warnings.append({"code": "openalex_not_found", "source": "openalex"})
+            else:
+                warnings.append({"code": "openalex_unavailable", "source": "openalex"})
+        except (httpx.HTTPError, ValueError):
+            warnings.append({"code": "openalex_unavailable", "source": "openalex"})
 
         if settings.contact_email:
             try:
