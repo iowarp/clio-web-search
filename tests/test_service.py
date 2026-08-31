@@ -54,7 +54,14 @@ class _TestWorker:
         await on_progress(25, "docling", "Test worker is converting", "info")
         markdown = path.read_text(encoding="utf-8")
         await on_progress(75, "export", "Test worker exported the document", "info")
-        return {"markdown": markdown, "structure": {"text": markdown}}
+        return {
+            "markdown": markdown,
+            "html": f"<pre>{markdown}</pre>",
+            "structure": {
+                "texts": [{"text": markdown, "prov": [{"page_no": 1}]}],
+                "tables": [{"data": [["value"]]}],
+            },
+        }
 
     async def stop(self) -> None:
         """Record deterministic worker shutdown."""
@@ -205,6 +212,16 @@ def test_markdown_conversion_is_durable_and_content_deduplicated(tmp_path: Path)
         assert result["result"]["document"]["extractors"] == [
             {"name": "docling", "version": "2.119.0"}
         ]
+        assert result["result"]["derivatives"]["schema"] == "clio.resource-derivatives.v1"
+        derivatives = result["result"]["derivatives"]["entries"]
+        assert [entry["id"] for entry in derivatives] == [
+            "markdown",
+            "html",
+            "preview",
+            "table-1",
+            "ocr-evidence",
+        ]
+        assert derivatives[3]["selector"] == "$.tables[0]"
         first_page = client.get(
             f"/v1/documents/{job_id}/events", params={"after_sequence": 0, "limit": 2}
         ).json()

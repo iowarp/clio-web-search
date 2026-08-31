@@ -246,6 +246,7 @@ def _worker_main(connection: _ConnectionLike, artifacts_path: str | None) -> Non
                     )
                     result = {
                         "markdown": conversion.document.export_to_markdown(),
+                        "html": conversion.document.export_to_html(),
                         "structure": conversion.document.export_to_dict(),
                     }
                     connection.send({"type": "result", "result": result})
