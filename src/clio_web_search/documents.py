@@ -294,8 +294,13 @@ class DocumentQueue:
         content_type: str | None,
         source_url: str | None,
         doi: str | None,
+        force: bool = False,
     ) -> dict[str, Any]:
-        """Create or resume a content-addressed conversion job."""
+        """Create or resume a content-addressed conversion job.
+
+        ``force`` explicitly requeues a completed cache entry while retaining
+        its stable job identity. Active work is still returned idempotently.
+        """
 
         digest = hashlib.sha256(data).hexdigest()
         cache_key = hashlib.sha256(f"{digest}:{_PIPELINE_VERSION}".encode()).hexdigest()
@@ -305,25 +310,33 @@ class DocumentQueue:
                 await database.execute("SELECT * FROM jobs WHERE cache_key = ?", (cache_key,))
             ).fetchone()
             if existing is not None:
-                if existing["status"] in {"failed", "cancelled"}:
+                should_requeue = existing["status"] in {"failed", "cancelled"} or (
+                    force and existing["status"] == "complete"
+                )
+                if should_requeue:
                     now = time.time()
+                    message = (
+                        "Queued for reprocessing"
+                        if force and existing["status"] == "complete"
+                        else "Queued for retry"
+                    )
                     await database.execute(
                         """
                         UPDATE jobs
                         SET status = 'queued', error = NULL, result_path = NULL,
                             progress = 0, stage = 'queued',
-                            message = 'Queued for retry', updated_at = ?
+                            message = ?, updated_at = ?
                         WHERE id = ?
                         """,
-                        (now, existing["id"]),
+                        (message, now, existing["id"]),
                     )
                     await database.execute(
                         """
                         INSERT INTO job_events
                             (job_id, created_at, level, progress, stage, message)
-                        VALUES (?, ?, 'info', 0, 'queued', 'Queued for retry')
+                        VALUES (?, ?, 'info', 0, 'queued', ?)
                         """,
-                        (existing["id"], now),
+                        (existing["id"], now, message),
                     )
                     await database.commit()
                     self._wake.set()

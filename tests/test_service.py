@@ -245,6 +245,14 @@ def test_markdown_conversion_is_durable_and_content_deduplicated(tmp_path: Path)
         assert duplicate.json()["id"] == job_id
         assert duplicate.json()["status"] == "complete"
 
+        reprocessed = client.post(
+            "/v1/documents",
+            files={"file": ("renamed.md", markdown, "text/markdown")},
+            data={"force": "true"},
+        )
+        assert reprocessed.status_code == 202
+        assert reprocessed.json() == {"id": job_id, "status": "queued", "retry_after_s": 2}
+
 
 def test_unknown_conversion_has_typed_error(tmp_path: Path) -> None:
     with TestClient(_test_app(_settings(tmp_path))) as client:

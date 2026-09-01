@@ -59,7 +59,9 @@ warnings.
 
 ### `POST /v1/documents`
 
-Submit multipart form data with a required `file` and optional `source_url` and `doi` fields:
+Submit multipart form data with a required `file` and optional `source_url`, `doi`, and `force`
+fields. Set `force=true` only for an explicit user-requested reprocess; it requeues a completed
+content-addressed job while active work remains idempotent:
 
 ```bash
 curl http://127.0.0.1:8089/v1/documents \

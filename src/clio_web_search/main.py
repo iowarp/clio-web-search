@@ -168,6 +168,7 @@ def create_app(
         file: Annotated[UploadFile, File()],
         source_url: Annotated[str | None, Form()] = None,
         doi: Annotated[str | None, Form()] = None,
+        force: Annotated[bool, Form()] = False,
     ) -> Response:
         data = await file.read(configured.max_input_bytes + 1)
         if len(data) > configured.max_input_bytes:
@@ -185,6 +186,7 @@ def create_app(
             content_type=file.content_type,
             source_url=source_url,
             doi=doi,
+            force=force,
         )
         if result["status"] == "queue_full":
             return error_response(
