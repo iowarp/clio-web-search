@@ -10,7 +10,7 @@ import time
 import uuid
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import aiosqlite
 import httpx
@@ -67,7 +67,7 @@ def build_derivative_manifest(
     for collection, singular in (("pages", "page"), ("tables", "table"), ("pictures", "figure")):
         value = structure.get(collection)
         if isinstance(value, dict):
-            keys = list(value)
+            keys = list(cast(dict[str, Any], value))
             for index, key in enumerate(keys):
                 entries.append(
                     {
@@ -79,7 +79,8 @@ def build_derivative_manifest(
                     }
                 )
         elif isinstance(value, list):
-            for index in range(len(value)):
+            items = cast(list[object], value)
+            for index in range(len(items)):
                 entries.append(
                     {
                         "id": f"{singular}-{index + 1}",
@@ -90,8 +91,9 @@ def build_derivative_manifest(
                     }
                 )
     texts = structure.get("texts")
-    if isinstance(texts, list) and any(
-        isinstance(item, dict) and item.get("prov") for item in texts
+    text_items = cast(list[object], texts) if isinstance(texts, list) else []
+    if any(
+        isinstance(item, dict) and cast(dict[str, Any], item).get("prov") for item in text_items
     ):
         entries.append(
             {
