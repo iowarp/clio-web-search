@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
+from functools import partial
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -32,12 +33,16 @@ app_logger = logging.getLogger(__name__)
 def create_app(
     settings: Settings | None = None,
     *,
-    worker_factory: Callable[[], ConversionWorker] = DoclingProcessWorker,
+    worker_factory: Callable[[], ConversionWorker] | None = None,
 ) -> FastAPI:
     """Create one configured CLIO Web Search application."""
 
     configured = settings or Settings()
-    queue = DocumentQueue(configured, worker_factory=worker_factory)
+    configured_worker_factory = worker_factory or partial(
+        DoclingProcessWorker,
+        compile_torch_models=configured.docling_compile_torch_models,
+    )
+    queue = DocumentQueue(configured, worker_factory=configured_worker_factory)
     task_backend = TaskBackendManager(configured)
 
     @asynccontextmanager

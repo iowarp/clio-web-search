@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     max_input_bytes: int = 50 * 1024 * 1024
     workers: int = Field(default=1, ge=1, le=16)
     max_pending_jobs: int = Field(default=32, ge=1, le=4096)
+    docling_compile_torch_models: bool = False
     cache_ttl_days: int = Field(default=7, ge=1, le=365)
     cache_max_bytes: int = 10 * 1024 * 1024 * 1024
     request_timeout_s: float = 30.0

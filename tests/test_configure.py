@@ -15,8 +15,15 @@ def test_settings_use_web_search_environment_prefix(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("CLIO_WEB_SEARCH_WORKERS", "3")
+    monkeypatch.setenv("CLIO_WEB_SEARCH_DOCLING_COMPILE_TORCH_MODELS", "true")
 
-    assert Settings().workers == 3
+    settings = Settings()
+    assert settings.workers == 3
+    assert settings.docling_compile_torch_models is True
+
+
+def test_docling_torch_compilation_is_opt_in() -> None:
+    assert Settings().docling_compile_torch_models is False
 
 
 def test_openalex_patch_suppresses_unverified_abstract(tmp_path: Path) -> None:

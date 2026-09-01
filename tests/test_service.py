@@ -106,6 +106,33 @@ def _test_app(settings: Settings) -> Any:
     return create_app(settings, worker_factory=_TestWorker)
 
 
+@pytest.mark.parametrize("compile_torch_models", [False, True])
+def test_default_worker_receives_explicit_torch_compilation_policy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    compile_torch_models: bool,
+) -> None:
+    observed: list[bool] = []
+
+    class _ConfiguredWorker(_TestWorker):
+        def __init__(self, *, compile_torch_models: bool) -> None:
+            super().__init__()
+            observed.append(compile_torch_models)
+
+    monkeypatch.setattr("clio_web_search.main.DoclingProcessWorker", _ConfiguredWorker)
+    with TestClient(
+        create_app(
+            _settings(
+                tmp_path,
+                docling_compile_torch_models=compile_torch_models,
+            )
+        )
+    ):
+        pass
+
+    assert observed == [compile_torch_models]
+
+
 def test_health_and_capabilities_degrade_without_contact_email(tmp_path: Path) -> None:
     with TestClient(_test_app(_settings(tmp_path))) as client:
         assert client.get("/healthz").json()["status"] == "ok"
