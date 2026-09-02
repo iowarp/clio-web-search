@@ -54,13 +54,66 @@ class _TestWorker:
         await on_progress(25, "docling", "Test worker is converting", "info")
         markdown = path.read_text(encoding="utf-8")
         await on_progress(75, "export", "Test worker exported the document", "info")
-        return {"markdown": markdown, "structure": {"text": markdown}}
+        return {
+            "markdown": markdown,
+            "html": f"<pre>{markdown}</pre>",
+            "structure": {
+                "texts": [{"text": markdown, "prov": [{"page_no": 1}]}],
+                "tables": [{"data": [["value"]]}],
+            },
+        }
 
     async def stop(self) -> None:
         """Record deterministic worker shutdown."""
 
         type(self).stops += 1
         self._ready = False
+
+
+class _NoHtmlWorker(_TestWorker):
+    """Worker whose backend produced no HTML rendering for the document."""
+
+    async def convert(
+        self,
+        path: Path,
+        *,
+        cancelled: asyncio.Event,
+        on_progress: ProgressCallback,
+        heartbeat_s: float,
+    ) -> dict[str, Any]:
+        """Return a conversion whose HTML rendering is missing."""
+
+        converted = await super().convert(
+            path, cancelled=cancelled, on_progress=on_progress, heartbeat_s=heartbeat_s
+        )
+        return {**converted, "html": ""}
+
+
+class _LongDocumentWorker(_TestWorker):
+    """Worker whose document carries more structured nodes than the entry budget."""
+
+    async def convert(
+        self,
+        path: Path,
+        *,
+        cancelled: asyncio.Event,
+        on_progress: ProgressCallback,
+        heartbeat_s: float,
+    ) -> dict[str, Any]:
+        """Return a conversion with many pages, tables, and pictures."""
+
+        converted = await super().convert(
+            path, cancelled=cancelled, on_progress=on_progress, heartbeat_s=heartbeat_s
+        )
+        return {
+            **converted,
+            "structure": {
+                "pages": {str(number): {"page_no": number} for number in range(1, 41)},
+                "tables": [{"data": [[f"cell-{index}"]]} for index in range(6)],
+                "pictures": [{"image": f"figure-{index}"} for index in range(4)],
+                "texts": [{"text": "body", "prov": [{"page_no": 1}]}],
+            },
+        }
 
 
 class _BlockingWorker(_TestWorker):
@@ -97,6 +150,33 @@ def _test_app(settings: Settings) -> Any:
     """Create an app whose worker obeys the production process contract."""
 
     return create_app(settings, worker_factory=_TestWorker)
+
+
+@pytest.mark.parametrize("compile_torch_models", [False, True])
+def test_default_worker_receives_explicit_torch_compilation_policy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    compile_torch_models: bool,
+) -> None:
+    observed: list[bool] = []
+
+    class _ConfiguredWorker(_TestWorker):
+        def __init__(self, *, compile_torch_models: bool) -> None:
+            super().__init__()
+            observed.append(compile_torch_models)
+
+    monkeypatch.setattr("clio_web_search.main.DoclingProcessWorker", _ConfiguredWorker)
+    with TestClient(
+        create_app(
+            _settings(
+                tmp_path,
+                docling_compile_torch_models=compile_torch_models,
+            )
+        )
+    ):
+        pass
+
+    assert observed == [compile_torch_models]
 
 
 def test_health_and_capabilities_degrade_without_contact_email(tmp_path: Path) -> None:
@@ -205,6 +285,19 @@ def test_markdown_conversion_is_durable_and_content_deduplicated(tmp_path: Path)
         assert result["result"]["document"]["extractors"] == [
             {"name": "docling", "version": "2.119.0"}
         ]
+        assert result["result"]["derivatives"]["schema"] == "clio.resource-derivatives.v1"
+        assert result["result"]["derivatives"]["entries_truncated"] is False
+        derivatives = result["result"]["derivatives"]["entries"]
+        assert [entry["id"] for entry in derivatives] == ["markdown", "html", "table-1"]
+        assert derivatives[2]["collection"] == "tables"
+        assert derivatives[2]["index"] == 0
+        assert result["result"]["document"]["capabilities"] == [
+            "markdown",
+            "html",
+            "document_structure",
+            "named_derivatives",
+        ]
+        assert result["result"]["document"]["warnings"] == []
         first_page = client.get(
             f"/v1/documents/{job_id}/events", params={"after_sequence": 0, "limit": 2}
         ).json()
@@ -227,6 +320,74 @@ def test_markdown_conversion_is_durable_and_content_deduplicated(tmp_path: Path)
         assert duplicate.status_code == 200
         assert duplicate.json()["id"] == job_id
         assert duplicate.json()["status"] == "complete"
+
+        reprocessed = client.post(
+            "/v1/documents",
+            files={"file": ("renamed.md", markdown, "text/markdown")},
+            data={"force": "true"},
+        )
+        assert reprocessed.status_code == 202
+        assert reprocessed.json() == {"id": job_id, "status": "queued", "retry_after_s": 2}
+
+
+def test_missing_html_rendering_is_reported_instead_of_advertised(tmp_path: Path) -> None:
+    """An absent HTML rendering is a typed warning, not an empty successful derivative."""
+
+    with TestClient(create_app(_settings(tmp_path), worker_factory=_NoHtmlWorker)) as client:
+        job_id = client.post(
+            "/v1/documents",
+            files={"file": ("nohtml.md", b"# No HTML\n", "text/markdown")},
+        ).json()["id"]
+        deadline = time.monotonic() + 30
+        result: dict[str, Any] = {}
+        while time.monotonic() < deadline:
+            result = client.get(f"/v1/documents/{job_id}").json()
+            if result["status"] in {"complete", "failed"}:
+                break
+            time.sleep(0.1)
+
+    assert result["status"] == "complete", result
+    document = result["result"]["document"]
+    assert "html" not in document["capabilities"]
+    assert [warning["code"] for warning in document["warnings"]] == ["html_rendering_unavailable"]
+    assert [entry["id"] for entry in result["result"]["derivatives"]["entries"]] == [
+        "markdown",
+        "table-1",
+    ]
+
+
+def test_configured_entry_budget_bounds_and_reports_the_manifest(tmp_path: Path) -> None:
+    """The deployment's entry budget caps the manifest and is reported to consumers."""
+
+    settings = _settings(tmp_path, max_derivative_entries=6)
+    with TestClient(create_app(settings, worker_factory=_LongDocumentWorker)) as client:
+        job_id = client.post(
+            "/v1/documents",
+            files={"file": ("long.md", b"# Long paper\n", "text/markdown")},
+        ).json()["id"]
+        deadline = time.monotonic() + 30
+        result: dict[str, Any] = {}
+        while time.monotonic() < deadline:
+            result = client.get(f"/v1/documents/{job_id}").json()
+            if result["status"] in {"complete", "failed"}:
+                break
+            time.sleep(0.1)
+
+    assert result["status"] == "complete", result
+    derivatives = result["result"]["derivatives"]
+    assert [entry["id"] for entry in derivatives["entries"]] == [
+        "markdown",
+        "html",
+        "table-1",
+        "table-2",
+        "table-3",
+        "table-4",
+    ]
+    assert derivatives["entries_truncated"] is True
+    assert derivatives["entry_counts"]["available"] == 52
+    assert [warning["code"] for warning in result["result"]["document"]["warnings"]] == [
+        "derivative_entries_truncated"
+    ]
 
 
 def test_unknown_conversion_has_typed_error(tmp_path: Path) -> None:

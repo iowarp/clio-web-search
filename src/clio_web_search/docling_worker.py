@@ -17,9 +17,11 @@ from typing import Any, Protocol, cast
 
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions, TableStructureV2Options
+from docling.datamodel.settings import settings as docling_settings
 from docling.document_converter import DocumentConverter, PdfFormatOption
 
 ProgressCallback = Callable[[int, str, str, str], Awaitable[None]]
+logger = logging.getLogger(__name__)
 
 
 class ConversionCancelledError(Exception):
@@ -143,9 +145,23 @@ class _PipeTextWriter(io.TextIOBase):
             return
 
 
-def _build_converter(artifacts_path: str | None) -> DocumentConverter:
+def _build_converter(
+    artifacts_path: str | None,
+    *,
+    compile_torch_models: bool,
+) -> DocumentConverter:
     """Construct the configured Docling converter."""
 
+    # Docling 2.119 defaults torch compilation on. PyTorch 2.13 then requires a
+    # platform C++ compiler during ordinary inference on Windows. Keep the
+    # service portable by making compilation an explicit deployment opt-in.
+    docling_settings.inference.compile_torch_models = compile_torch_models
+    logger.info(
+        "Docling worker torch compilation is %s (compile_torch_models=%s, artifacts_path=%s)",
+        "enabled" if compile_torch_models else "disabled",
+        compile_torch_models,
+        artifacts_path or "docling default",
+    )
     pdf_options = PdfPipelineOptions(
         artifacts_path=Path(artifacts_path) if artifacts_path else None,
         table_structure_options=TableStructureV2Options(),
@@ -188,7 +204,11 @@ def _warmup_pdf() -> bytes:
     return bytes(document)
 
 
-def _worker_main(connection: _ConnectionLike, artifacts_path: str | None) -> None:
+def _worker_main(
+    connection: _ConnectionLike,
+    artifacts_path: str | None,
+    compile_torch_models: bool,
+) -> None:
     """Warm Docling, then execute conversion commands in a child process."""
 
     stdout = _PipeTextWriter(connection, "stdout")
@@ -204,7 +224,10 @@ def _worker_main(connection: _ConnectionLike, artifacts_path: str | None) -> Non
                     "message": "Loading the Docling PDF pipeline",
                 }
             )
-            converter = _build_converter(artifacts_path)
+            converter = _build_converter(
+                artifacts_path,
+                compile_torch_models=compile_torch_models,
+            )
             converter.initialize_pipeline(InputFormat.PDF)
             with tempfile.TemporaryDirectory(prefix="clio-docling-warmup-") as directory:
                 fixture = Path(directory) / "warmup.pdf"
@@ -246,6 +269,7 @@ def _worker_main(connection: _ConnectionLike, artifacts_path: str | None) -> Non
                     )
                     result = {
                         "markdown": conversion.document.export_to_markdown(),
+                        "html": conversion.document.export_to_html(),
                         "structure": conversion.document.export_to_dict(),
                     }
                     connection.send({"type": "result", "result": result})
@@ -281,11 +305,12 @@ def _worker_main(connection: _ConnectionLike, artifacts_path: str | None) -> Non
 class DoclingProcessWorker:
     """One persistent Docling process warmed before application readiness."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, compile_torch_models: bool = False) -> None:
         self._context = multiprocessing.get_context("spawn")
         self._process: _ProcessLike | None = None
         self._connection: _ConnectionLike | None = None
         self._ready = False
+        self._compile_torch_models = compile_torch_models
 
     @property
     def ready(self) -> bool:
@@ -301,7 +326,11 @@ class DoclingProcessWorker:
         parent, child = self._context.Pipe()
         process = self._context.Process(
             target=_worker_main,
-            args=(child, os.environ.get("DOCLING_ARTIFACTS_PATH")),
+            args=(
+                child,
+                os.environ.get("DOCLING_ARTIFACTS_PATH"),
+                self._compile_torch_models,
+            ),
             name="clio-docling-worker",
             daemon=True,
         )
@@ -323,9 +352,9 @@ class DoclingProcessWorker:
                 self._ready = True
                 return
             if message_type == "log":
-                logging.getLogger(__name__).info("Docling startup: %s", message.get("message"))
+                logger.info("Docling startup: %s", message.get("message"))
             elif message_type == "progress":
-                logging.getLogger(__name__).info("%s", message.get("message"))
+                logger.info("%s", message.get("message"))
             elif message_type in {"error", "fatal"}:
                 raise RuntimeError(
                     f"Docling worker warmup failed: {message.get('error_type')}: "
@@ -386,7 +415,7 @@ class DoclingProcessWorker:
             elif message_type in {"error", "fatal"}:
                 detail = str(message.get("traceback", ""))
                 if detail:
-                    logging.getLogger(__name__).error("Docling worker failed:\n%s", detail)
+                    logger.error("Docling worker failed:\n%s", detail)
                 raise RuntimeError(
                     f"{message.get('error_type', 'DoclingError')}: {message.get('message', '')}"
                 )

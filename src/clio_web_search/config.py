@@ -7,6 +7,8 @@ from pathlib import Path
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from clio_web_search.derivatives import DEFAULT_MAX_DERIVATIVE_ENTRIES
+
 
 class Settings(BaseSettings):
     """Service settings loaded from ``CLIO_WEB_SEARCH_`` environment variables."""
@@ -23,6 +25,8 @@ class Settings(BaseSettings):
     max_input_bytes: int = 50 * 1024 * 1024
     workers: int = Field(default=1, ge=1, le=16)
     max_pending_jobs: int = Field(default=32, ge=1, le=4096)
+    max_derivative_entries: int = Field(default=DEFAULT_MAX_DERIVATIVE_ENTRIES, ge=1, le=4096)
+    docling_compile_torch_models: bool = False
     cache_ttl_days: int = Field(default=7, ge=1, le=365)
     cache_max_bytes: int = 10 * 1024 * 1024 * 1024
     request_timeout_s: float = 30.0

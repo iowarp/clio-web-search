@@ -52,7 +52,9 @@ Compose reads `.env` automatically. Empty optional values remain disabled.
 | `CLIO_WEB_SEARCH_DATA_VOLUME` | `clio-web-search-data` | Persistent Docker volume name |
 | `CLIO_WEB_SEARCH_MAX_INPUT_BYTES` | `52428800` | Maximum uploaded document size |
 | `CLIO_WEB_SEARCH_WORKERS` | `1` | Document conversion workers, from 1 to 16 |
-| `CLIO_WEB_SEARCH_MAX_PENDING_JOBS` | `32` | Maximum queued and running jobs |
+| `CLIO_WEB_SEARCH_MAX_PENDING_JOBS` | `32` | Maximum queued and running jobs, including forced reprocesses |
+| `CLIO_WEB_SEARCH_MAX_DERIVATIVE_ENTRIES` | `32` | Maximum named derivative entries listed per document |
+| `CLIO_WEB_SEARCH_DOCLING_COMPILE_TORCH_MODELS` | `false` | Opt in to Docling torch compilation; needs a platform C++ compiler |
 | `CLIO_WEB_SEARCH_CACHE_TTL_DAYS` | `7` | Completed-result retention, from 1 to 365 days |
 | `CLIO_WEB_SEARCH_CACHE_MAX_BYTES` | `10737418240` | Persistent cache size budget |
 | `CLIO_WEB_SEARCH_REQUEST_TIMEOUT_S` | `30` | Search and metadata request timeout |
