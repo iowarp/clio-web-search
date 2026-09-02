@@ -82,6 +82,31 @@ references, citation contexts, and the contributing extractors.
 Conversion itself has no overall timeout. The job continues until completion, failure, service
 shutdown, or explicit cancellation.
 
+A completed result also carries a `derivatives` manifest of named views:
+
+```json
+{
+  "schema": "clio.resource-derivatives.v1",
+  "entries": [
+    {"id": "markdown", "name": "paper.md", "kind": "markdown",
+     "media_type": "text/markdown", "content": "# Paper"},
+    {"id": "table-1", "name": "paper.table-1.json", "kind": "table",
+     "media_type": "application/json", "collection": "tables", "index": 0}
+  ],
+  "entries_truncated": true,
+  "entry_counts": {"included": 32, "available": 74, "omitted": 42,
+                   "by_kind": {"page": {"available": 40, "included": 0}}}
+}
+```
+
+Whole-document renderings carry their text inline as `content` and are always listed; the HTML
+entry and the `html` capability are omitted when the converter produced no HTML rendering.
+Structured entries name a canonical `document.structure` collection and a positional `index` —
+they carry no content. The manifest is bounded by `CLIO_WEB_SEARCH_MAX_DERIVATIVE_ENTRIES`,
+preferring tables and figures over per-page nodes; `entries_truncated` and `entry_counts` report
+what the cap left out, and a `derivative_entries_truncated` warning repeats it in
+`document.warnings`.
+
 ### `GET /v1/documents/{job_id}/events`
 
 Returns an ordered event page. Use `after_sequence` as a cursor and `limit` from 1 to 500. Each

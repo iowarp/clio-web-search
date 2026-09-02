@@ -24,7 +24,7 @@ from clio_web_search.docling_worker import (
 )
 from clio_web_search.grobid import enrich_pdf, looks_like_pdf
 
-_PIPELINE_VERSION = "docling-2.119.0+grobid-0.9.0-crf+clio-5"
+_PIPELINE_VERSION = "docling-2.119.0+grobid-0.9.0-crf+clio-6"
 _MAX_PUBLIC_ERROR_CHARS = 800
 logger = logging.getLogger(__name__)
 
@@ -220,6 +220,9 @@ class DocumentQueue:
 
         ``force`` explicitly requeues a completed cache entry while retaining
         its stable job identity. Active work is still returned idempotently.
+        Every admission of new work, including a requeue, obeys the configured
+        backpressure budget; an already converted result is still served when
+        the queue is full.
         """
 
         digest = hashlib.sha256(data).hexdigest()
@@ -234,21 +237,24 @@ class DocumentQueue:
                     force and existing["status"] == "complete"
                 )
                 if should_requeue:
+                    if await self._admission_is_full(database):
+                        return {"status": "queue_full", "retry_after_s": 30}
                     now = time.time()
                     message = (
                         "Queued for reprocessing"
                         if force and existing["status"] == "complete"
                         else "Queued for retry"
                     )
+                    superseded = existing["result_path"]
                     await database.execute(
                         """
                         UPDATE jobs
                         SET status = 'queued', error = NULL, result_path = NULL,
                             progress = 0, stage = 'queued',
-                            message = ?, updated_at = ?
+                            message = ?, created_at = ?, updated_at = ?
                         WHERE id = ?
                         """,
-                        (message, now, existing["id"]),
+                        (message, now, now, existing["id"]),
                     )
                     await database.execute(
                         """
@@ -259,15 +265,11 @@ class DocumentQueue:
                         (existing["id"], now, message),
                     )
                     await database.commit()
+                    self._release_result_file(str(superseded) if superseded else None)
                     self._wake.set()
                     return {"id": existing["id"], "status": "queued", "retry_after_s": 2}
                 return await self._job_payload(dict(existing))
-            pending = await (
-                await database.execute(
-                    "SELECT COUNT(*) AS count FROM jobs WHERE status IN ('queued', 'running')"
-                )
-            ).fetchone()
-            if pending is not None and int(pending[0]) >= self.settings.max_pending_jobs:
+            if await self._admission_is_full(database):
                 return {"status": "queue_full", "retry_after_s": 30}
             job_id = str(uuid.uuid4())
             suffix = Path(filename).suffix[:16]
@@ -305,6 +307,27 @@ class DocumentQueue:
             await database.commit()
         self._wake.set()
         return {"id": job_id, "status": "queued", "retry_after_s": 2}
+
+    async def _admission_is_full(self, database: aiosqlite.Connection) -> bool:
+        """Return whether queued and running work already fills the admission budget."""
+
+        pending = await (
+            await database.execute(
+                "SELECT COUNT(*) AS count FROM jobs WHERE status IN ('queued', 'running')"
+            )
+        ).fetchone()
+        return pending is not None and int(pending[0]) >= self.settings.max_pending_jobs
+
+    @staticmethod
+    def _release_result_file(result_path: str | None) -> None:
+        """Delete the superseded result file a requeued job no longer references."""
+
+        if not result_path:
+            return
+        try:
+            Path(result_path).unlink(missing_ok=True)
+        except OSError:
+            logger.warning("Could not remove superseded result file %s", result_path)
 
     async def get(self, job_id: str, *, include_events: bool = True) -> dict[str, Any] | None:
         """Return one durable conversion job."""
@@ -719,6 +742,16 @@ class DocumentQueue:
         html = str(converted.get("html") or "")
         document_dict = converted["structure"]
         warnings: list[dict[str, str]] = []
+        if not html:
+            warnings.append(
+                {
+                    "code": "html_rendering_unavailable",
+                    "message": (
+                        "The converter produced no HTML rendering; Markdown and the canonical "
+                        "document structure remain complete."
+                    ),
+                }
+            )
         metadata: dict[str, Any] = {}
         references: list[dict[str, Any]] = []
         citation_contexts: list[dict[str, Any]] = []
@@ -779,7 +812,20 @@ class DocumentQueue:
             markdown=markdown,
             html=html,
             structure=document_dict,
+            max_entries=self.settings.max_derivative_entries,
         )
+        if derivatives["entries_truncated"]:
+            counts = derivatives["entry_counts"]
+            warnings.append(
+                {
+                    "code": "derivative_entries_truncated",
+                    "message": (
+                        f"This manifest lists {counts['included']} of {counts['available']} "
+                        "named views; the remaining structured nodes stay reachable through "
+                        "the document structure by collection and index."
+                    ),
+                }
+            )
         return {
             "markdown": markdown,
             "html": html,
@@ -792,7 +838,7 @@ class DocumentQueue:
                 "citation_contexts": citation_contexts,
                 "capabilities": [
                     "markdown",
-                    "html",
+                    *(["html"] if html else []),
                     "document_structure",
                     "named_derivatives",
                     *(["bibliography", "citation_contexts"] if references else []),
