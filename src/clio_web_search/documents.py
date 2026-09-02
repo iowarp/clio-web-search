@@ -10,12 +10,13 @@ import time
 import uuid
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import aiosqlite
 import httpx
 
 from clio_web_search.config import Settings
+from clio_web_search.derivatives import build_derivative_manifest
 from clio_web_search.docling_worker import (
     ConversionCancelledError,
     ConversionWorker,
@@ -24,89 +25,6 @@ from clio_web_search.docling_worker import (
 from clio_web_search.grobid import enrich_pdf, looks_like_pdf
 
 _PIPELINE_VERSION = "docling-2.119.0+grobid-0.9.0-crf+clio-5"
-
-
-def build_derivative_manifest(
-    *,
-    filename: str,
-    markdown: str,
-    html: str,
-    structure: dict[str, Any],
-) -> dict[str, Any]:
-    """Describe named, versioned views without duplicating Docling structure.
-
-    Textual renderings are carried inline for the custody service to persist.
-    Structured nodes remain canonical in ``document.structure`` and are named
-    by JSON selector so consumers can retrieve them through bounded tools.
-    """
-
-    stem = Path(filename).stem or "document"
-    entries: list[dict[str, Any]] = [
-        {
-            "id": "markdown",
-            "name": f"{stem}.md",
-            "kind": "markdown",
-            "media_type": "text/markdown",
-            "content": markdown,
-        },
-        {
-            "id": "html",
-            "name": f"{stem}.html",
-            "kind": "html",
-            "media_type": "text/html",
-            "content": html,
-        },
-        {
-            "id": "preview",
-            "name": f"{stem}.preview.html",
-            "kind": "preview",
-            "media_type": "text/html",
-            "source": "html",
-        },
-    ]
-    for collection, singular in (("pages", "page"), ("tables", "table"), ("pictures", "figure")):
-        value = structure.get(collection)
-        if isinstance(value, dict):
-            keys = list(cast(dict[str, Any], value))
-            for index, key in enumerate(keys):
-                entries.append(
-                    {
-                        "id": f"{singular}-{index + 1}",
-                        "name": f"{stem}.{singular}-{index + 1}.json",
-                        "kind": singular,
-                        "media_type": "application/json",
-                        "selector": f"$.{collection}.{key}",
-                    }
-                )
-        elif isinstance(value, list):
-            items = cast(list[object], value)
-            for index in range(len(items)):
-                entries.append(
-                    {
-                        "id": f"{singular}-{index + 1}",
-                        "name": f"{stem}.{singular}-{index + 1}.json",
-                        "kind": singular,
-                        "media_type": "application/json",
-                        "selector": f"$.{collection}[{index}]",
-                    }
-                )
-    texts = structure.get("texts")
-    text_items = cast(list[object], texts) if isinstance(texts, list) else []
-    if any(
-        isinstance(item, dict) and cast(dict[str, Any], item).get("prov") for item in text_items
-    ):
-        entries.append(
-            {
-                "id": "ocr-evidence",
-                "name": f"{stem}.ocr-evidence.json",
-                "kind": "ocr_evidence",
-                "media_type": "application/json",
-                "selector": "$.texts[?(@.prov)]",
-            }
-        )
-    return {"schema": "clio.resource-derivatives.v1", "entries": entries}
-
-
 _MAX_PUBLIC_ERROR_CHARS = 800
 logger = logging.getLogger(__name__)
 
