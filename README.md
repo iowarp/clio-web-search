@@ -44,7 +44,7 @@ docker run --detach \
   --publish 127.0.0.1:8090:6379 \
   --env CLIO_WEB_SEARCH_CONTACT_EMAIL=you@example.org \
   --volume clio-web-search-data:/var/lib/clio-web-search \
-  ghcr.io/iowarp/clio-web-search:0.3.0
+  ghcr.io/iowarp/clio-web-search:0.3.1
 ```
 
 Docker pulls the published image automatically. A Git checkout is not required.

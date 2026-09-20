@@ -85,7 +85,7 @@ ENV CLIO_WEB_SEARCH_SEARXNG_URL=http://127.0.0.1:8888 \
 LABEL org.opencontainers.image.title="CLIO Web Search" \
       org.opencontainers.image.description="Self-hosted web search and document understanding for AI agents" \
       org.opencontainers.image.licenses="AGPL-3.0-or-later" \
-      org.opencontainers.image.version="0.3.0" \
+      org.opencontainers.image.version="0.3.1" \
       org.opencontainers.image.source="https://github.com/iowarp/clio-web-search"
 
 VOLUME ["/var/lib/clio-web-search"]

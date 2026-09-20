@@ -59,6 +59,13 @@ def test_config_has_free_engines_and_no_shared_identity(tmp_path: Path) -> None:
     assert engines["datacite"]["mailto"] == ""
     assert engines["openalex"]["api_key"] == ""
     assert not any("tavily" in str(engine).lower() for engine in generated["engines"])
+    assert {"bing", "mojeek", "qwant", "wikipedia"} <= {
+        name for name, engine in engines.items() if engine["disabled"] is False
+    }
+    assert generated["outgoing"] == {
+        "request_timeout": 15.0,
+        "max_request_timeout": 30.0,
+    }
 
 
 def test_deployer_identity_is_written_and_secret_is_stable(tmp_path: Path) -> None:

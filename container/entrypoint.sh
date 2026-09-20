@@ -53,12 +53,23 @@ if [ "$task_scheme" = "rediss" ]; then
 fi
 export CLIO_WEB_SEARCH_TASK_BACKEND_URL
 
-terminate() {
+cleanup() {
     kill -TERM "${gateway_pid:-}" "${searxng_pid:-}" "${grobid_pid:-}" \
         "${valkey_pid:-}" 2>/dev/null || true
     wait 2>/dev/null || true
 }
-trap terminate INT TERM EXIT
+
+shutdown() {
+    # An operator-requested stop is a successful lifecycle transition, not a
+    # child crash. Disable all traps before cleaning up so EXIT cannot run the
+    # cleanup a second time, then report success to Docker.
+    trap - INT TERM EXIT
+    cleanup
+    exit 0
+}
+
+trap shutdown INT TERM
+trap cleanup EXIT
 
 valkey-server "$@" \
     > /tmp/clio-web-search/valkey.log 2>&1 &

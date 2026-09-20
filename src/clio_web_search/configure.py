@@ -14,6 +14,7 @@ from clio_web_search.config import Settings
 _ENGINE_NAMES = [
     "arxiv",
     "askubuntu",
+    "bing",
     "brave",
     "crossref",
     "datacite",
@@ -22,10 +23,19 @@ _ENGINE_NAMES = [
     "mojeek",
     "openalex",
     "pubmed",
+    "qwant",
     "semantic scholar",
     "stackoverflow",
     "startpage",
     "superuser",
+    "wikipedia",
+]
+
+_GENERAL_ENGINES = [
+    {"name": "bing", "engine": "bing", "shortcut": "bi"},
+    {"name": "mojeek", "engine": "mojeek", "shortcut": "mj"},
+    {"name": "qwant", "engine": "qwant", "shortcut": "qw", "qwant_categ": "web"},
+    {"name": "wikipedia", "engine": "wikipedia", "shortcut": "wp"},
 ]
 
 
@@ -33,6 +43,14 @@ def build_searxng_settings(settings: Settings, *, secret_key: str) -> dict[str, 
     """Return settings with free engines and no shared identity or paid provider."""
 
     engines: list[dict[str, Any]] = [
+        *(
+            {
+                **engine,
+                "categories": "general",
+                "disabled": False,
+            }
+            for engine in _GENERAL_ENGINES
+        ),
         {
             "name": "crossref",
             "engine": "crossref",
@@ -81,7 +99,13 @@ def build_searxng_settings(settings: Settings, *, secret_key: str) -> dict[str, 
             "image_proxy": False,
             "method": "GET",
         },
-        "outgoing": {"request_timeout": 5.0, "max_request_timeout": 15.0},
+        # University and HPC egress commonly adds several seconds of proxy/DNS
+        # latency.  Five seconds caused every general-web engine to be marked
+        # unresponsive on Ares even though the same requests completed shortly
+        # afterwards when exercised directly.  Keep the bound finite, but leave
+        # enough room for a useful engine to answer instead of returning a
+        # misleading successful search with zero results.
+        "outgoing": {"request_timeout": 15.0, "max_request_timeout": 30.0},
         "engines": engines,
     }
 
