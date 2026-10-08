@@ -41,3 +41,33 @@ def test_operator_stop_exits_cleanly_instead_of_reporting_child_failure() -> Non
     assert "trap - INT TERM EXIT" in shutdown
     assert "cleanup" in shutdown
     assert "exit 0" in shutdown
+
+
+def test_dockerfile_publishes_slim_and_full_targets() -> None:
+    """The slim target omits document conversion; full stays the default target."""
+
+    dockerfile = (_ROOT / "Dockerfile").read_text(encoding="utf-8")
+
+    slim = dockerfile[dockerfile.index(" AS slim-build") : dockerfile.index(" AS full")]
+    full = dockerfile[dockerfile.index(" AS full") :]
+    assert "FROM ${GROBID_IMAGE} AS full" in dockerfile
+    assert dockerfile.rstrip().rfind("\nFROM ") == dockerfile.index("\nFROM ${GROBID_IMAGE}")
+    assert "GROBID_IMAGE" not in slim
+    assert "docling-tools" not in slim
+    assert "--extra documents" not in slim
+    assert "CLIO_WEB_SEARCH_DOCUMENTS_ENABLED=false" in slim
+    assert "sha256sum --check --strict" in slim
+    assert "--extra documents" in full
+    assert "docling-tools" in full
+    assert "CLIO_WEB_SEARCH_DOCUMENTS_ENABLED=true" in full
+
+
+def test_entrypoint_skips_document_services_in_search_only_images() -> None:
+    """GROBID is started only when document conversion is enabled and installed."""
+
+    entrypoint = (_ROOT / "container" / "entrypoint.sh").read_text(encoding="utf-8")
+
+    assert "[ ! -x /opt/grobid/grobid-service/bin/grobid-service ]" in entrypoint
+    grobid_block = entrypoint[: entrypoint.index("./grobid-service/bin/grobid-service")]
+    assert 'if [ "$documents_enabled" = "true" ]; then' in grobid_block
+    assert "${grobid_pid:-}" in entrypoint

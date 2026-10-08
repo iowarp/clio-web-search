@@ -3,6 +3,10 @@
 CLIO Web Search is distributed as a Linux container for `amd64` and `arm64` hosts. The image
 contains SearXNG, Docling, GROBID, Valkey, their models, and the HTTP gateway.
 
+Each release is published twice: `X.Y.Z` (full: search plus Docling and GROBID document
+conversion) and `X.Y.Z-slim` (search only: gateway, SearXNG, and Valkey). Build either locally with
+`docker build --target full .` or `docker build --target slim .`; `full` is the default target.
+
 ## Docker
 
 `docker run` pulls the published image directly from GHCR. It does not require Git.
@@ -54,6 +58,7 @@ Compose reads `.env` automatically. Empty optional values remain disabled.
 | `CLIO_WEB_SEARCH_WORKERS` | `1` | Document conversion workers, from 1 to 16 |
 | `CLIO_WEB_SEARCH_MAX_PENDING_JOBS` | `32` | Maximum queued and running jobs, including forced reprocesses |
 | `CLIO_WEB_SEARCH_MAX_DERIVATIVE_ENTRIES` | `32` | Maximum named derivative entries listed per document |
+| `CLIO_WEB_SEARCH_DOCUMENTS_ENABLED` | auto | `false` serves search only (set in the `-slim` image); `true` fails startup if Docling is missing |
 | `CLIO_WEB_SEARCH_DOCLING_COMPILE_TORCH_MODELS` | `false` | Opt in to Docling torch compilation; needs a platform C++ compiler |
 | `CLIO_WEB_SEARCH_CACHE_TTL_DAYS` | `7` | Completed-result retention, from 1 to 365 days |
 | `CLIO_WEB_SEARCH_CACHE_MAX_BYTES` | `10737418240` | Persistent cache size budget |

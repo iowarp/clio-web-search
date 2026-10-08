@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import logging
 from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
@@ -29,6 +30,47 @@ from clio_web_search.task_backend import (
 
 app_logger = logging.getLogger(__name__)
 
+DOCUMENTS_NOT_INSTALLED = "document_conversion_not_installed"
+
+
+def documents_installed() -> bool:
+    """Return whether the optional Docling ``documents`` extra is importable."""
+
+    return importlib.util.find_spec("docling") is not None
+
+
+def _documents_enabled(
+    settings: Settings,
+    worker_factory: Callable[[], ConversionWorker] | None,
+) -> bool:
+    """Resolve whether this deployment serves document conversion."""
+
+    if settings.documents_enabled is False:
+        return False
+    if worker_factory is not None or documents_installed():
+        return True
+    if settings.documents_enabled:
+        raise RuntimeError(
+            "CLIO_WEB_SEARCH_DOCUMENTS_ENABLED=true, but Docling is not installed. "
+            "Install the 'documents' extra or use the full clio-web-search image."
+        )
+    return False
+
+
+def _documents_not_installed() -> JSONResponse:
+    """Return the typed error for document endpoints on a search-only deployment."""
+
+    return error_response(
+        501,
+        DOCUMENTS_NOT_INSTALLED,
+        "Document conversion is not installed in this deployment.",
+        stage="capability",
+        remediation=(
+            "Use the full clio-web-search image (or install the 'documents' extra) "
+            "to enable Docling and GROBID document conversion."
+        ),
+    )
+
 
 def create_app(
     settings: Settings | None = None,
@@ -38,15 +80,20 @@ def create_app(
     """Create one configured CLIO Web Search application."""
 
     configured = settings or Settings()
-    configured_worker_factory = worker_factory or partial(
-        DoclingProcessWorker,
-        compile_torch_models=configured.docling_compile_torch_models,
-    )
-    queue = DocumentQueue(configured, worker_factory=configured_worker_factory)
+    queue: DocumentQueue | None = None
+    if _documents_enabled(configured, worker_factory):
+        configured_worker_factory = worker_factory or partial(
+            DoclingProcessWorker,
+            compile_torch_models=configured.docling_compile_torch_models,
+        )
+        queue = DocumentQueue(configured, worker_factory=configured_worker_factory)
     task_backend = TaskBackendManager(configured)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+        if queue is None:
+            yield
+            return
         await queue.start()
         try:
             yield
@@ -64,14 +111,15 @@ def create_app(
 
     @app.get("/readyz")
     async def ready() -> Response:
-        checks: dict[str, str] = {"docling": "ready" if queue.ready else "unavailable"}
+        checks: dict[str, str] = {}
+        probes = {"searxng": f"{configured.searxng_url.rstrip('/')}/config"}
+        if queue is not None:
+            checks["docling"] = "ready" if queue.ready else "unavailable"
+            probes["grobid"] = f"{configured.grobid_url.rstrip('/')}/api/isalive"
         if task_backend.enabled:
             checks["valkey"] = "ready" if await task_backend.ready() else "unavailable"
         async with httpx.AsyncClient(timeout=3.0) as client:
-            for name, url in {
-                "searxng": f"{configured.searxng_url.rstrip('/')}/config",
-                "grobid": f"{configured.grobid_url.rstrip('/')}/api/isalive",
-            }.items():
+            for name, url in probes.items():
                 try:
                     response = await client.get(url)
                     checks[name] = "ready" if response.status_code == 200 else "unavailable"
@@ -83,29 +131,44 @@ def create_app(
             content={"status": "ready" if status == 200 else "not_ready", "checks": checks},
         )
 
+    async def _documents_capability() -> dict[str, Any]:
+        if queue is None:
+            return {
+                "available": False,
+                "disabled_reason": DOCUMENTS_NOT_INSTALLED,
+                "formats": [],
+                "extractors": [],
+                "max_input_bytes": configured.max_input_bytes,
+                "queue": None,
+                "overall_conversion_timeout": None,
+            }
+        return {
+            "available": True,
+            "disabled_reason": None,
+            "formats": [
+                "pdf",
+                "docx",
+                "pptx",
+                "xlsx",
+                "html",
+                "markdown",
+                "text",
+                "xml",
+                "images",
+            ],
+            "extractors": ["docling-2.119.0", "grobid-0.9.0-crf"],
+            "max_input_bytes": configured.max_input_bytes,
+            "queue": await queue.counts(),
+            "overall_conversion_timeout": None,
+        }
+
     @app.get("/v1/capabilities")
     async def capabilities(request: Request) -> dict[str, Any]:
         return {
             "service": "clio-web-search",
             "version": __version__,
             "search": {"provider": "searxng", "path": "/search"},
-            "documents": {
-                "formats": [
-                    "pdf",
-                    "docx",
-                    "pptx",
-                    "xlsx",
-                    "html",
-                    "markdown",
-                    "text",
-                    "xml",
-                    "images",
-                ],
-                "extractors": ["docling-2.119.0", "grobid-0.9.0-crf"],
-                "max_input_bytes": configured.max_input_bytes,
-                "queue": await queue.counts(),
-                "overall_conversion_timeout": None,
-            },
+            "documents": await _documents_capability(),
             "task_backend": task_backend.descriptor(request.url.hostname),
             "scholarly": {
                 "datacite_search": True,
@@ -175,6 +238,8 @@ def create_app(
         doi: Annotated[str | None, Form()] = None,
         force: Annotated[bool, Form()] = False,
     ) -> Response:
+        if queue is None:
+            return _documents_not_installed()
         data = await file.read(configured.max_input_bytes + 1)
         if len(data) > configured.max_input_bytes:
             return error_response(
@@ -207,6 +272,8 @@ def create_app(
 
     @app.get("/v1/documents/{job_id}")
     async def get_document(job_id: str) -> Response:
+        if queue is None:
+            return _documents_not_installed()
         result = await queue.get(job_id)
         if result is None:
             return error_response(
@@ -226,6 +293,8 @@ def create_app(
         after_sequence: int = 0,
         limit: int = 100,
     ) -> Response:
+        if queue is None:
+            return _documents_not_installed()
         if await queue.get(job_id, include_events=False) is None:
             return error_response(
                 404,
@@ -246,6 +315,8 @@ def create_app(
 
     @app.post("/v1/documents/{job_id}/cancel")
     async def cancel_document(job_id: str) -> Response:
+        if queue is None:
+            return _documents_not_installed()
         result = await queue.cancel(job_id)
         if result is None:
             return error_response(

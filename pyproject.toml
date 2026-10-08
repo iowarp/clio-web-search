@@ -8,7 +8,6 @@ license = "MIT"
 authors = [{ name = "IOWarp" }]
 dependencies = [
     "aiosqlite>=0.21.0,<1",
-    "docling==2.119.0",
     "fastapi>=0.116.0,<1",
     "httpx>=0.28.1,<1",
     "lxml>=5.4.0,<7",
@@ -16,9 +15,16 @@ dependencies = [
     "python-multipart>=0.0.20,<1",
     "pyyaml>=6.0.2,<7",
     "redis>=6.4.0,<7",
+    "uvicorn[standard]>=0.35.0,<1",
+]
+
+[project.optional-dependencies]
+# Document conversion (Docling + PyTorch). The slim search-only image omits this
+# extra; the full image installs it alongside GROBID and the Docling models.
+documents = [
+    "docling==2.119.0",
     "torch>=2.8.0",
     "torchvision>=0.23.0",
-    "uvicorn[standard]>=0.35.0,<1",
 ]
 
 [project.urls]

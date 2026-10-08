@@ -57,6 +57,10 @@ warnings.
 
 ## Documents
 
+Document conversion is optional. On a search-only deployment (the `-slim` image) every
+`/v1/documents*` endpoint returns `501` with code `document_conversion_not_installed`, and
+`/v1/capabilities` reports `documents.available: false` with that `disabled_reason`.
+
 ### `POST /v1/documents`
 
 Submit multipart form data with a required `file` and optional `source_url`, `doi`, and `force`
