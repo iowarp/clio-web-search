@@ -48,7 +48,9 @@ def test_dockerfile_publishes_slim_and_full_targets() -> None:
 
     dockerfile = (_ROOT / "Dockerfile").read_text(encoding="utf-8")
 
-    slim = dockerfile[dockerfile.index(" AS slim-build") : dockerfile.index(" AS full")]
+    slim = dockerfile[
+        dockerfile.index(" AS slim-build") : dockerfile.index("FROM ${GROBID_IMAGE} AS full")
+    ]
     full = dockerfile[dockerfile.index(" AS full") :]
     assert "FROM ${GROBID_IMAGE} AS full" in dockerfile
     assert dockerfile.rstrip().rfind("\nFROM ") == dockerfile.index("\nFROM ${GROBID_IMAGE}")
