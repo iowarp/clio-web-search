@@ -7,6 +7,17 @@ if [ "$(id -u)" = "0" ]; then
 fi
 
 mkdir -p /var/lib/clio-web-search /tmp/clio-web-search
+
+# The full image bundles Docling + GROBID; the slim image is search only and sets
+# CLIO_WEB_SEARCH_DOCUMENTS_ENABLED=false. Skip document services when either the
+# operator disabled them or GROBID is not present in this image.
+documents_enabled=true
+if [ "${CLIO_WEB_SEARCH_DOCUMENTS_ENABLED:-}" = "false" ] \
+    || [ ! -x /opt/grobid/grobid-service/bin/grobid-service ]; then
+    documents_enabled=false
+    CLIO_WEB_SEARCH_DOCUMENTS_ENABLED=false
+    export CLIO_WEB_SEARCH_DOCUMENTS_ENABLED
+fi
 settings_path="$(/app/.venv/bin/python -m clio_web_search.configure)"
 
 task_auth_token="${CLIO_WEB_SEARCH_TASK_BACKEND_API_TOKEN:-}"
@@ -80,23 +91,26 @@ cd /app
     > /tmp/clio-web-search/gateway.log 2>&1 &
 gateway_pid=$!
 
-# Warm Docling before loading GROBID's multi-gigabyte model set.  Serializing
+# Full image: warm Docling before loading GROBID's multi-gigabyte model set.  Serializing
 # those two initialization phases avoids a transient memory and disk-I/O spike
 # on the small homelab host.  Uvicorn does not serve healthz until its lifespan
 # startup (and therefore the real Docling warmup conversion) has completed.
 until curl --fail --silent http://127.0.0.1:8080/healthz >/dev/null; do
     if ! kill -0 "$gateway_pid" "$valkey_pid" 2>/dev/null; then
-        echo "CLIO Web Search failed during Docling startup warmup" >&2
+        echo "CLIO Web Search gateway failed during startup" >&2
         tail -100 /tmp/clio-web-search/*.log >&2 || true
         exit 1
     fi
     sleep 2
 done
-echo "Docling startup warmup complete" >&2
-
-cd /opt/grobid
-./grobid-service/bin/grobid-service > /tmp/clio-web-search/grobid.log 2>&1 &
-grobid_pid=$!
+if [ "$documents_enabled" = "true" ]; then
+    echo "Docling startup warmup complete" >&2
+    cd /opt/grobid
+    ./grobid-service/bin/grobid-service > /tmp/clio-web-search/grobid.log 2>&1 &
+    grobid_pid=$!
+else
+    echo "Search-only deployment: document conversion (Docling, GROBID) not started" >&2
+fi
 
 cd /opt/searxng
 SEARXNG_SETTINGS_PATH="$settings_path" \
@@ -105,7 +119,8 @@ SEARXNG_SETTINGS_PATH="$settings_path" \
     > /tmp/clio-web-search/searxng.log 2>&1 &
 searxng_pid=$!
 
-while kill -0 "$gateway_pid" "$searxng_pid" "$grobid_pid" "$valkey_pid" 2>/dev/null; do
+# shellcheck disable=SC2086 # grobid_pid is intentionally omitted when empty.
+while kill -0 "$gateway_pid" "$searxng_pid" ${grobid_pid:-} "$valkey_pid" 2>/dev/null; do
     sleep 2
 done
 

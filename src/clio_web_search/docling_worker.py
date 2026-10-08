@@ -13,12 +13,14 @@ import traceback
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
-from docling.datamodel.base_models import InputFormat
-from docling.datamodel.pipeline_options import PdfPipelineOptions, TableStructureV2Options
-from docling.datamodel.settings import settings as docling_settings
-from docling.document_converter import DocumentConverter, PdfFormatOption
+if TYPE_CHECKING:
+    from docling.document_converter import DocumentConverter
+
+# Docling is the optional ``documents`` extra. It is imported only inside the
+# conversion child process so the gateway imports cleanly in the slim,
+# search-only deployment that does not install it.
 
 ProgressCallback = Callable[[int, str, str, str], Awaitable[None]]
 logger = logging.getLogger(__name__)
@@ -152,6 +154,11 @@ def _build_converter(
 ) -> DocumentConverter:
     """Construct the configured Docling converter."""
 
+    from docling import document_converter as converters
+    from docling.datamodel.base_models import InputFormat
+    from docling.datamodel.pipeline_options import PdfPipelineOptions, TableStructureV2Options
+    from docling.datamodel.settings import settings as docling_settings
+
     # Docling 2.119 defaults torch compilation on. PyTorch 2.13 then requires a
     # platform C++ compiler during ordinary inference on Windows. Keep the
     # service portable by making compilation an explicit deployment opt-in.
@@ -166,8 +173,8 @@ def _build_converter(
         artifacts_path=Path(artifacts_path) if artifacts_path else None,
         table_structure_options=TableStructureV2Options(),
     )
-    return DocumentConverter(
-        format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pdf_options)}
+    return converters.DocumentConverter(
+        format_options={InputFormat.PDF: converters.PdfFormatOption(pipeline_options=pdf_options)}
     )
 
 
@@ -228,6 +235,8 @@ def _worker_main(
                 artifacts_path,
                 compile_torch_models=compile_torch_models,
             )
+            from docling.datamodel.base_models import InputFormat
+
             converter.initialize_pipeline(InputFormat.PDF)
             with tempfile.TemporaryDirectory(prefix="clio-docling-warmup-") as directory:
                 fixture = Path(directory) / "warmup.pdf"

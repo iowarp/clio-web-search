@@ -44,10 +44,18 @@ docker run --detach \
   --publish 127.0.0.1:8090:6379 \
   --env CLIO_WEB_SEARCH_CONTACT_EMAIL=you@example.org \
   --volume clio-web-search-data:/var/lib/clio-web-search \
-  ghcr.io/iowarp/clio-web-search:0.3.1
+  ghcr.io/iowarp/clio-web-search:0.3.2
 ```
 
 Docker pulls the published image automatically. A Git checkout is not required.
+
+### Slim, search-only image
+
+`ghcr.io/iowarp/clio-web-search:0.3.2-slim` contains only the gateway, SearXNG, and Valkey. It
+omits Docling, GROBID, PyTorch, and their models, so it pulls and starts much faster. Document
+endpoints (`/v1/documents*`) answer `501 document_conversion_not_installed`, and
+`/v1/capabilities` reports `documents.available: false`. Use the full `:0.3.2` image when agents
+need PDF and office-document conversion.
 Container health remains in `starting` until Docling's PDF pipeline has been loaded and warmed.
 Conversions have no overall elapsed-time deadline; only bounded upstream network requests time out.
 
@@ -89,7 +97,7 @@ automated repository tools.
 ## Development
 
 ```bash
-uv sync --all-groups
+uv sync --all-groups --all-extras
 uv run ruff check .
 uv run ruff format --check .
 uv run mypy

@@ -3,6 +3,10 @@
 CLIO Web Search is distributed as a Linux container for `amd64` and `arm64` hosts. The image
 contains SearXNG, Docling, GROBID, Valkey, their models, and the HTTP gateway.
 
+Each release is published twice: `X.Y.Z` (full: search plus Docling and GROBID document
+conversion) and `X.Y.Z-slim` (search only: gateway, SearXNG, and Valkey). Build either locally with
+`docker build --target full .` or `docker build --target slim .`; `full` is the default target.
+
 ## Docker
 
 `docker run` pulls the published image directly from GHCR. It does not require Git.
@@ -15,11 +19,11 @@ docker run --detach \
   --publish 127.0.0.1:8090:6379 \
   --env CLIO_WEB_SEARCH_CONTACT_EMAIL=you@example.org \
   --volume clio-web-search-data:/var/lib/clio-web-search \
-  ghcr.io/iowarp/clio-web-search:0.3.1
+  ghcr.io/iowarp/clio-web-search:0.3.2
 ```
 
 Omit `CLIO_WEB_SEARCH_CONTACT_EMAIL` if Unpaywall enrichment is not needed. Use a release digest in
-place of `:0.3.1` for an immutable deployment.
+place of `:0.3.2` for an immutable deployment.
 
 ## Docker Compose
 
@@ -44,7 +48,7 @@ Compose reads `.env` automatically. Empty optional values remain disabled.
 
 | Variable | Default | Purpose |
 | --- | ---: | --- |
-| `CLIO_WEB_SEARCH_IMAGE` | `ghcr.io/iowarp/clio-web-search:0.3.1` | Compose image tag or digest |
+| `CLIO_WEB_SEARCH_IMAGE` | `ghcr.io/iowarp/clio-web-search:0.3.2` | Compose image tag or digest |
 | `CLIO_WEB_SEARCH_BIND_ADDRESS` | `127.0.0.1` | Host address published by Compose |
 | `CLIO_WEB_SEARCH_PORT` | `8089` | HTTP host port published by Compose |
 | `CLIO_WEB_SEARCH_CONTACT_EMAIL` | empty | Crossref identification and Unpaywall access |
@@ -54,6 +58,7 @@ Compose reads `.env` automatically. Empty optional values remain disabled.
 | `CLIO_WEB_SEARCH_WORKERS` | `1` | Document conversion workers, from 1 to 16 |
 | `CLIO_WEB_SEARCH_MAX_PENDING_JOBS` | `32` | Maximum queued and running jobs, including forced reprocesses |
 | `CLIO_WEB_SEARCH_MAX_DERIVATIVE_ENTRIES` | `32` | Maximum named derivative entries listed per document |
+| `CLIO_WEB_SEARCH_DOCUMENTS_ENABLED` | auto | `false` serves search only (set in the `-slim` image); `true` fails startup if Docling is missing |
 | `CLIO_WEB_SEARCH_DOCLING_COMPILE_TORCH_MODELS` | `false` | Opt in to Docling torch compilation; needs a platform C++ compiler |
 | `CLIO_WEB_SEARCH_CACHE_TTL_DAYS` | `7` | Completed-result retention, from 1 to 365 days |
 | `CLIO_WEB_SEARCH_CACHE_MAX_BYTES` | `10737418240` | Persistent cache size budget |

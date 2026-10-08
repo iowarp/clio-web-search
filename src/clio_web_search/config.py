@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     max_pending_jobs: int = Field(default=32, ge=1, le=4096)
     max_derivative_entries: int = Field(default=DEFAULT_MAX_DERIVATIVE_ENTRIES, ge=1, le=4096)
     docling_compile_torch_models: bool = False
+    # Document conversion (Docling + GROBID) is the optional ``documents`` extra.
+    # ``None`` auto-detects whether Docling is installed; the slim image pins it off.
+    documents_enabled: bool | None = None
     cache_ttl_days: int = Field(default=7, ge=1, le=365)
     cache_max_bytes: int = 10 * 1024 * 1024 * 1024
     request_timeout_s: float = 30.0

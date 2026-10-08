@@ -1,12 +1,131 @@
 # syntax=docker/dockerfile:1.7
+#
+# Two published targets share this file:
+#   slim  search only: gateway + SearXNG + Valkey (no GROBID, no Docling, no models)
+#         docker build --target slim -t clio-web-search:X.Y.Z-slim .
+#   full  search + document conversion (Docling + GROBID); the default target so a
+#         plain `docker build .` and the existing X.Y.Z tag keep their behaviour.
 ARG GROBID_IMAGE=grobid/grobid:0.9.0-crf@sha256:24ba90eb1c959f65d812bcdb2cf79c677fa5fd7b95235de616b8bc9fa1317849
+# DIGEST PIN (slim base): replace the tag below with tag@digest before a release.
+# Resolve the multi-arch index digest with either of:
+#   crane digest python:3.12-slim-bookworm
+#   docker buildx imagetools inspect python:3.12-slim-bookworm --format '{{json .Manifest.Digest}}'
+# then set PYTHON_IMAGE=python:3.12-slim-bookworm@sha256:<digest>.
+ARG PYTHON_IMAGE=python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258
 ARG VALKEY_VERSION=8.1.9
 ARG VALKEY_SHA256=f7e927534aaeb3a5f4410375c3e6f2f0c1b9257db8bc573e68f9e2dbb11344f4
+ARG SEARXNG_COMMIT=e8e710e42a3ab2bce27d1f97e51d8d4ccaa80871
 FROM ghcr.io/astral-sh/uv:0.8.12 AS uv
-FROM ${GROBID_IMAGE}
+
+# ---------------------------------------------------------------------------
+# slim: build stage (compilers stay here; only runtime trees are copied out)
+# ---------------------------------------------------------------------------
+FROM ${PYTHON_IMAGE} AS slim-build
 
 ARG VALKEY_VERSION
 ARG VALKEY_SHA256
+ARG SEARXNG_COMMIT
+ENV UV_PYTHON=/usr/local/bin/python3.12 \
+    UV_PYTHON_DOWNLOADS=never
+
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        build-essential ca-certificates curl libssl-dev pkg-config \
+    && curl --fail --silent --show-error --location \
+        --output /tmp/valkey.tar.gz \
+        "https://github.com/valkey-io/valkey/archive/refs/tags/${VALKEY_VERSION}.tar.gz" \
+    && echo "${VALKEY_SHA256}  /tmp/valkey.tar.gz" | sha256sum --check --strict \
+    && mkdir /tmp/valkey \
+    && tar xzf /tmp/valkey.tar.gz --strip-components=1 -C /tmp/valkey \
+    && make -C /tmp/valkey -j"$(nproc)" BUILD_TLS=yes \
+    && make -C /tmp/valkey PREFIX=/opt/valkey install \
+    && /opt/valkey/bin/valkey-server --version \
+    && rm -rf /tmp/valkey /tmp/valkey.tar.gz /var/lib/apt/lists/*
+
+COPY --from=uv /uv /usr/local/bin/uv
+
+RUN mkdir -p /opt/searxng \
+    && uv venv --python /usr/local/bin/python3.12 /opt/searxng/.venv \
+    && mkdir -p /opt/searxng-source \
+    && curl --fail --silent --show-error --location \
+        "https://github.com/searxng/searxng/archive/${SEARXNG_COMMIT}.tar.gz" \
+        | tar xz --strip-components=1 -C /opt/searxng-source \
+    && printf '%s\n' \
+        '# SPDX-License-Identifier: AGPL-3.0-or-later' \
+        'VERSION_STRING = "2026.8.11+e8e710e42"' \
+        'VERSION_TAG = "2026.8.11+e8e710e42"' \
+        'DOCKER_TAG = "2026.8.11-e8e710e42"' \
+        'GIT_URL = "https://github.com/searxng/searxng"' \
+        'GIT_BRANCH = "master"' \
+        > /opt/searxng-source/searx/version_frozen.py \
+    && uv pip install --python /opt/searxng/.venv/bin/python \
+        --requirements /opt/searxng-source/requirements.txt \
+        --requirements /opt/searxng-source/requirements-server.txt \
+        setuptools \
+    && uv pip install --python /opt/searxng/.venv/bin/python \
+        --no-build-isolation /opt/searxng-source \
+    && rm -rf /opt/searxng-source
+
+COPY container/datacite.py container/patch_searxng.py /opt/clio-web-search-build/
+RUN /opt/searxng/.venv/bin/python /opt/clio-web-search-build/patch_searxng.py \
+    && rm -rf /opt/clio-web-search-build
+
+WORKDIR /app
+COPY pyproject.toml uv.lock README.md LICENSE ./
+# No `documents` extra: Docling, PyTorch, and their models are not installed.
+RUN uv sync --frozen --no-dev --no-install-project
+COPY src ./src
+RUN uv sync --frozen --no-dev \
+    && if /app/.venv/bin/python -c 'import docling' 2>/dev/null; then \
+        echo "slim image must not contain Docling" >&2; exit 1; fi
+
+# ---------------------------------------------------------------------------
+# slim: runtime image
+# ---------------------------------------------------------------------------
+FROM ${PYTHON_IMAGE} AS slim
+
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        ca-certificates curl tini \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=slim-build /opt/valkey/bin/ /usr/local/bin/
+COPY --from=slim-build /opt/searxng /opt/searxng
+COPY --from=slim-build /app /app
+COPY container/entrypoint.sh /usr/local/bin/clio-web-search-entrypoint
+COPY container/valkey.conf /etc/clio-web-search/valkey.conf
+RUN chmod 0755 /usr/local/bin/clio-web-search-entrypoint \
+    && valkey-server --version \
+    && mkdir -p /var/lib/clio-web-search/valkey \
+    && chown -R 65534:65534 /var/lib/clio-web-search \
+    && chmod 0770 /var/lib/clio-web-search /var/lib/clio-web-search/valkey
+
+ENV CLIO_WEB_SEARCH_SEARXNG_URL=http://127.0.0.1:8888 \
+    CLIO_WEB_SEARCH_DATA_DIR=/var/lib/clio-web-search \
+    CLIO_WEB_SEARCH_TASK_BACKEND_PUBLIC_PORT=8090 \
+    CLIO_WEB_SEARCH_DOCUMENTS_ENABLED=false
+
+LABEL org.opencontainers.image.title="CLIO Web Search (slim)" \
+      org.opencontainers.image.description="Self-hosted web search for AI agents (search only; no document conversion)" \
+      org.opencontainers.image.licenses="AGPL-3.0-or-later" \
+      org.opencontainers.image.version="0.3.1" \
+      org.opencontainers.image.source="https://github.com/iowarp/clio-web-search"
+
+VOLUME ["/var/lib/clio-web-search"]
+EXPOSE 8080 6379
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD curl --fail --silent http://127.0.0.1:8080/readyz >/dev/null || exit 1
+
+ENTRYPOINT ["/usr/bin/tini", "-s", "--", "/usr/local/bin/clio-web-search-entrypoint"]
+
+# ---------------------------------------------------------------------------
+# full: search + Docling + GROBID (default target; keep it the last stage)
+# ---------------------------------------------------------------------------
+FROM ${GROBID_IMAGE} AS full
+
+ARG VALKEY_VERSION
+ARG VALKEY_SHA256
+ARG SEARXNG_COMMIT
 
 USER root
 RUN apt-get update \
@@ -26,7 +145,6 @@ RUN apt-get update \
 
 COPY --from=uv /uv /usr/local/bin/uv
 
-ARG SEARXNG_COMMIT=e8e710e42a3ab2bce27d1f97e51d8d4ccaa80871
 RUN mkdir -p /opt/searxng \
     && uv venv --python python3.12 /opt/searxng/.venv \
     && mkdir -p /opt/searxng-source \
@@ -51,12 +169,12 @@ RUN mkdir -p /opt/searxng \
 
 WORKDIR /app
 COPY pyproject.toml uv.lock README.md LICENSE ./
-RUN uv sync --frozen --no-dev --no-install-project
+RUN uv sync --frozen --no-dev --extra documents --no-install-project
 RUN /app/.venv/bin/docling-tools models download \
         layout tableformerv2 rapidocr \
         --output-dir /opt/docling-models
 COPY src ./src
-RUN uv sync --frozen --no-dev
+RUN uv sync --frozen --no-dev --extra documents
 
 COPY container/datacite.py container/patch_searxng.py /opt/clio-web-search-build/
 RUN /opt/searxng/.venv/bin/python /opt/clio-web-search-build/patch_searxng.py \
@@ -74,6 +192,7 @@ ENV CLIO_WEB_SEARCH_SEARXNG_URL=http://127.0.0.1:8888 \
     CLIO_WEB_SEARCH_GROBID_URL=http://127.0.0.1:8070 \
     CLIO_WEB_SEARCH_DATA_DIR=/var/lib/clio-web-search \
     CLIO_WEB_SEARCH_TASK_BACKEND_PUBLIC_PORT=8090 \
+    CLIO_WEB_SEARCH_DOCUMENTS_ENABLED=true \
     HF_HOME=/var/lib/clio-web-search/huggingface \
     DOCLING_ARTIFACTS_PATH=/opt/docling-models \
     JAVA_OPTS="-Xms256m -Xmx1536m -XX:MaxDirectMemorySize=256m -XX:+ExitOnOutOfMemoryError" \
