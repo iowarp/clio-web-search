@@ -11,7 +11,7 @@ ARG GROBID_IMAGE=grobid/grobid:0.9.0-crf@sha256:24ba90eb1c959f65d812bcdb2cf79c67
 #   crane digest python:3.12-slim-bookworm
 #   docker buildx imagetools inspect python:3.12-slim-bookworm --format '{{json .Manifest.Digest}}'
 # then set PYTHON_IMAGE=python:3.12-slim-bookworm@sha256:<digest>.
-ARG PYTHON_IMAGE=python:3.12-slim-bookworm
+ARG PYTHON_IMAGE=python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258
 ARG VALKEY_VERSION=8.1.9
 ARG VALKEY_SHA256=f7e927534aaeb3a5f4410375c3e6f2f0c1b9257db8bc573e68f9e2dbb11344f4
 ARG SEARXNG_COMMIT=e8e710e42a3ab2bce27d1f97e51d8d4ccaa80871
