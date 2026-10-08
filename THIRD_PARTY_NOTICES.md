@@ -1,6 +1,6 @@
 # Third-party notices
 
-CLIO Web Search 0.3.1 combines independently licensed open-source components. The
+CLIO Web Search 0.3.2 combines independently licensed open-source components. The
 container and Python lockfile retain the complete dependency graph; this file
 highlights the major runtime components and immutable pins.
 

@@ -19,11 +19,11 @@ docker run --detach \
   --publish 127.0.0.1:8090:6379 \
   --env CLIO_WEB_SEARCH_CONTACT_EMAIL=you@example.org \
   --volume clio-web-search-data:/var/lib/clio-web-search \
-  ghcr.io/iowarp/clio-web-search:0.3.1
+  ghcr.io/iowarp/clio-web-search:0.3.2
 ```
 
 Omit `CLIO_WEB_SEARCH_CONTACT_EMAIL` if Unpaywall enrichment is not needed. Use a release digest in
-place of `:0.3.1` for an immutable deployment.
+place of `:0.3.2` for an immutable deployment.
 
 ## Docker Compose
 
@@ -48,7 +48,7 @@ Compose reads `.env` automatically. Empty optional values remain disabled.
 
 | Variable | Default | Purpose |
 | --- | ---: | --- |
-| `CLIO_WEB_SEARCH_IMAGE` | `ghcr.io/iowarp/clio-web-search:0.3.1` | Compose image tag or digest |
+| `CLIO_WEB_SEARCH_IMAGE` | `ghcr.io/iowarp/clio-web-search:0.3.2` | Compose image tag or digest |
 | `CLIO_WEB_SEARCH_BIND_ADDRESS` | `127.0.0.1` | Host address published by Compose |
 | `CLIO_WEB_SEARCH_PORT` | `8089` | HTTP host port published by Compose |
 | `CLIO_WEB_SEARCH_CONTACT_EMAIL` | empty | Crossref identification and Unpaywall access |

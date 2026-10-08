@@ -1,8 +1,8 @@
 services:
   clio-web-search:
     # Override CLIO_WEB_SEARCH_IMAGE to pin an immutable digest or test another release.
-    # Use the ":0.3.1-slim" tag for a search-only deployment without document conversion.
-    image: "${CLIO_WEB_SEARCH_IMAGE:-ghcr.io/iowarp/clio-web-search:0.3.1}"
+    # Use the ":0.3.2-slim" tag for a search-only deployment without document conversion.
+    image: "${CLIO_WEB_SEARCH_IMAGE:-ghcr.io/iowarp/clio-web-search:0.3.2}"
     container_name: clio-web-search
     restart: unless-stopped
     init: true
